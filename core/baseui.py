@@ -12,13 +12,11 @@ class UIEvent(Event):
 class BaseUIComponent(Component):
     def __init__(self, title, layout):
         super().__init__()
+        sg.theme("DarkAmber")
         self.title = title
         self.layout = layout
         self.window = None
-        self.window = sg.Window(self.title, self.layout)
-    
-    def UIEvent(self, *args):
-        print("UIEvent: ", args)
+        self.window = sg.Window(self.title, self.layout, resizable=True, use_ttk_buttons=True)
     
     def run(self, socket=None):
         """
