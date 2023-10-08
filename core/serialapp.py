@@ -13,6 +13,11 @@ class evtask(Event):
         串口定时处理事件
     """
 
+class evUpdateUI(Event):
+    """
+        更新UI事件
+    """
+
 class MySerial(Component):
     """
         定时从串口读取数据
@@ -186,18 +191,23 @@ class SerialUI(BaseUIComponent):
             [sg.I(key="-SENDTEXT-", expand_x=True),sg.B("Send", key="-SEND-")]
         ]
         super().__init__("Serial", self.layout, debug=True)
+        self._display_list = []
         self._ser = MySerial()
         self += self._ser
         self += SerialSegmentComponent()
         self._ansi = Ansi2DisplayConverter()
         self += self._ansi
-        self += Worker(process=False ,workers=20)
-
-    def updateDisplay(self, win, data, ts, bg_color, fg_color):
-        win["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
-
+        self._display_queue = deque()
+        self._display_timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
+        self += self._display_timer
+    
+    def evUpdateUI(self):
+        while len(self._display_queue) > 0:
+            data, _, bg_color, fg_color = self._display_queue.popleft()
+            self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
+    
     def DisplayData(self, data, ts, bg_color, fg_color):
-        self.fire(task(self.updateDisplay, self.window, data, ts, bg_color, fg_color))
+        self._display_queue.append((data, ts, bg_color, fg_color))
         # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
         # self.window.refresh()
 
