@@ -1,12 +1,12 @@
 from collections import deque
-import PySimpleGUI as sg
 from baseui import BaseUIComponent
 import serial.tools.list_ports
-from circuits import Component, Event, Timer, Worker, task
+from circuits import Component, Event, Timer, Worker, task, Debugger
 from circuits.io.events import close, read, open, write, opened, closed, error
 from event import SegmentData, SetSegmentMode, DisplayData
 from datetime import datetime
 from stransi import Ansi, SetColor
+from nicegui import ui
 
 class evtask(Event):
     """
@@ -173,43 +173,82 @@ class Ansi2DisplayConverter(Component):
                     else:
                         self.bg_color = self.default_bg_color
 
-class SerialUI(BaseUIComponent):
+
+class SerialUI(Component):
+    channel = "serial"
+
     def __init__(self):
+        print("SerialUI init")
         self.baudrates = [
-            "300", "600", "1200", "2400", "4800", "9600", "14400", "19200", 
-            "28800", "38400", "56000", "57600", "115200", "128000", "230400",
-            "256000", "460800", "500000", "512000", "600000", "750000", "921600",
-            "1000000", "1500000", "2000000", "2500000", "3000000", "3500000"
+            300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 
+            28800, 38400, 56000, 57600, 115200, 128000, 230400,
+            256000, 460800, 500000, 512000, 600000, 750000, 921600,
+            1000000, 1500000, 2000000, 2500000, 3000000, 3500000
         ]
         ports = serial.tools.list_ports.comports()
-        port_list = []
+        self.port_list = []
         for port in ports:
-            port_list.append(port.device)
-        self.layout = [
-            [sg.T("Port:"), sg.Combo(port_list, key="-PORTLIST-", enable_events=True), sg.T("Baudrate:"), sg.Combo(self.baudrates, default_value="115200", key="-BAUDRATELIST-", enable_events=True), sg.B("Open", key="-OPENCLOSE-")],
-            [sg.Multiline(size=(100, 50), key="-RECVTEXT-", expand_x=True, expand_y=True)],
-            [sg.I(key="-SENDTEXT-", expand_x=True),sg.B("Send", key="-SEND-")]
-        ]
-        super().__init__("Serial", self.layout, debug=True)
-        self._display_list = []
+            self.port_list.append(port.device)
+        # super().__init__("Serial", debug=True)
+        super().__init__(self.channel)
+        self += Debugger()
+        self.port = self.port_list[0]
+        self.baud = 115200
+        self.openclose = "Open"
+        self.sendtxt = ""
+        self.recvtxt = ""
         self._ser = MySerial()
         self += self._ser
         self += SerialSegmentComponent()
         self._ansi = Ansi2DisplayConverter()
         self += self._ansi
-        self._display_queue = deque()
-        self._display_timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
-        self += self._display_timer
+
+        #setup ui
+        with ui.row().classes("w-full"):
+            ui.select(self.port_list, label="Port").bind_value(self, "port")
+            ui.select(self.baudrates, label="Baudrate").bind_value(self,"baud")
+            ui.button(on_click=self.onOpenClose).bind_text(self, "openclose")
+            ui.input().bind_value(self, "sendtxt")
+            ui.button(text="Send", on_click=self.onSend)
+        ui.separator()
+        # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
+        self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
+        with self.scroll:
+            ui.html().bind_content(self, "recvtxt")
+        
+        # self._display_queue = deque()
+        # self._timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
+        # self += self._timer
     
-    def evUpdateUI(self):
-        while len(self._display_queue) > 0:
-            data, _, bg_color, fg_color = self._display_queue.popleft()
-            self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
+    def onSend(self):
+        print("send:", self.sendtxt)
+
+    def onOpenClose(self, e):
+        if not self.running:
+            self.start()
+        if self.openclose == "Open":
+            self.fire(open(port=self.port, baudrate=self.baud), self._ser.channel)
+            # self._display_queue.append((open(self.port, baudrate=self.baud), self._ser.channel))
+            self.openclose = "Close"
+        else:
+            self.fire(close(), self._ser.channel)
+            # self._display_queue.append((close(), self._ser.channel))
+            self.openclose = "Open"
+
+    # def evUpdateUI(self):
+    #     while len(self._display_queue) > 0:
+    #         ev, channel = self._display_queue.popleft()
+    #         print("fire event: ", ev, channel)
+    #         self.fire(ev, channel)
     
     def DisplayData(self, data, ts, bg_color, fg_color):
-        self._display_queue.append((data, ts, bg_color, fg_color))
+        # self._display_queue.append((data, ts, bg_color, fg_color))
         # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
         # self.window.refresh()
+        data = """<p style="color:{}">{}</p>""".format(fg_color, data)
+        # self._log.push(data)
+        self.recvtxt += data
+        self.scroll.scroll_to(percent=1.0)
 
     def UIEvent(self, *arg):
         event = arg[0]
@@ -228,6 +267,13 @@ class SerialUI(BaseUIComponent):
                 self.window["-OPENCLOSE-"].update(text="Open")
                 self.window.refresh()
 
-if __name__ == "__main__":
-    serialUI = SerialUI()
-    serialUI.uiRun()
+
+
+myUI = SerialUI()
+# if __name__ in {"__main__", "__mp_main__"}:
+# if __name__ == "__main__":
+    # myUI.uiRun()
+myUI.start()
+ui.run(native=True)
+myUI.stop()
+myUI.join()
