@@ -5,7 +5,7 @@ from circuits import Component, Event, Timer, Worker, task, Debugger
 from circuits.io.events import close, read, open, write, opened, closed, error
 from event import SegmentData, SetSegmentMode, DisplayData
 from datetime import datetime
-from stransi import Ansi, SetColor
+from stransi import Ansi, SetColor, SetAttribute
 from nicegui import ui
 
 class evtask(Event):
@@ -132,13 +132,14 @@ class SerialSegmentComponent(Component):
         pass
 
 class Ansi2DisplayConverter(Component):
-    def __init__(self, fg_color="#000000", bg_color="#FFFFFF", channel="serial"):
+    def __init__(self, fg_color="black", bg_color="white", channel="serial"):
         super(Ansi2DisplayConverter, self).__init__(channel=channel)
         self.bg_color = bg_color
         self.fg_color = fg_color
         self.default_bg_color = bg_color
         self.default_fg_color = fg_color
         self.bold = False
+        self._colorflag = False
         #TODO:支持粗体，斜体，下划线
     
     def SetColor(self, bg_color, fg_color):
@@ -149,7 +150,8 @@ class Ansi2DisplayConverter(Component):
         self.default_fg_color = fg_color
     
     def _cvtColor(self, color):
-        return "#{:x}".format(color) 
+        # return "#{:x}".format(color) 
+        return color.web_color.name
     
     def SegmentData(self, *arg):
         data = arg[0]
@@ -161,15 +163,22 @@ class Ansi2DisplayConverter(Component):
         for t in Ansi(data).instructions():
             if isinstance(t, str):
                 self.fire(DisplayData(t, ts, self.bg_color, self.fg_color), self.channel)
+            elif isinstance(t, SetAttribute):
+                if self._colorflag:
+                    self._colorflag = False
+                    self.fg_color = self.default_fg_color
+                    self.bg_color = self.default_bg_color
             elif isinstance(t, SetColor):
                 if t.role.name == "FOREGROUND":
                     if t.color:
-                        self.fg_color = self._cvtColor(t.color.hex.hex_code)
+                        self.fg_color = self._cvtColor(t.color)
+                        self._colorflag = True
                     else:
                         self.fg_color = self.default_fg_color
                 else:
                     if t.color:
-                        self.bg_color = self._cvtColor(t.color.hex.hex_code)
+                        self.bg_color = self._cvtColor(t.color)
+                        self._colorflag = True
                     else:
                         self.bg_color = self.default_bg_color
 
@@ -178,7 +187,6 @@ class SerialUI(Component):
     channel = "serial"
 
     def __init__(self):
-        print("SerialUI init")
         self.baudrates = [
             300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 
             28800, 38400, 56000, 57600, 115200, 128000, 230400,
@@ -191,7 +199,7 @@ class SerialUI(Component):
             self.port_list.append(port.device)
         # super().__init__("Serial", debug=True)
         super().__init__(self.channel)
-        self += Debugger()
+        # self += Debugger()
         self.port = self.port_list[0]
         self.baud = 115200
         self.openclose = "Open"
@@ -245,7 +253,7 @@ class SerialUI(Component):
         # self._display_queue.append((data, ts, bg_color, fg_color))
         # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
         # self.window.refresh()
-        data = """<p style="color:{}">{}</p>""".format(fg_color, data)
+        data = """<p style="color:{};background-color:{};">{}</p>""".format(fg_color, bg_color, data)
         # self._log.push(data)
         self.recvtxt += data
         self.scroll.scroll_to(percent=1.0)
@@ -269,11 +277,9 @@ class SerialUI(Component):
 
 
 
-myUI = SerialUI()
-# if __name__ in {"__main__", "__mp_main__"}:
-# if __name__ == "__main__":
-    # myUI.uiRun()
-myUI.start()
-ui.run(native=True)
-myUI.stop()
-myUI.join()
+if __name__ in {"__main__", "__mp_main__"}:
+    myUI = SerialUI()
+    myUI.start()
+    ui.run(native=True, reload=False)
+    myUI.stop()
+    myUI.join()
