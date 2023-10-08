@@ -18,7 +18,7 @@ class MySerial(Component):
         定时从串口读取数据
     """
     channel = "serial"
-    def __init__(self, port=None, baudrate=115200, timeout=0.1, bufsize=4096):
+    def __init__(self, port=None, baudrate=115200, timeout=0.05, bufsize=4096):
         super().__init__()
         self.port = port
         self.baudrate = baudrate
@@ -63,8 +63,8 @@ class MySerial(Component):
         if self._ser.in_waiting > 0:
             data = self._ser.read(self._ser.in_waiting)
             #时间戳
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-            self.fire(read(data, now), self.channel)
+            now = datetime.now().strftime("%m-%d %H:%M:%S.%f")[:-3]
+            self.fire(read(data.decode(), now), self.channel)
         #发送数据
         if self._wrbuf:
             try:
@@ -109,6 +109,8 @@ class SerialSegmentComponent(Component):
         if self._mode == "text":
             #文本模式
             for line in data.splitlines(keepends=True):
+                #为每行数据增加时间戳
+                line = "[" + arg[1] + "] " + line
                 self.fire(SegmentData(line, arg[1], "text"), self.channel)
         else :
             #HEX模式,将数据转为hex string
@@ -151,7 +153,7 @@ class Ansi2DisplayConverter(Component):
         if mode == "hex":
             self.fire(DisplayData(data, ts, self.bg_color, self.fg_color), self.channel)
             return
-        for t in Ansi(data.decode()).instructions():
+        for t in Ansi(data).instructions():
             if isinstance(t, str):
                 self.fire(DisplayData(t, ts, self.bg_color, self.fg_color), self.channel)
             elif isinstance(t, SetColor):
@@ -183,7 +185,7 @@ class SerialUI(BaseUIComponent):
             [sg.Multiline(size=(100, 50), key="-RECVTEXT-", expand_x=True, expand_y=True)],
             [sg.I(key="-SENDTEXT-", expand_x=True),sg.B("Send", key="-SEND-")]
         ]
-        super().__init__("Serial", self.layout, debug=False)
+        super().__init__("Serial", self.layout, debug=True)
         self._ser = MySerial()
         self += self._ser
         self += SerialSegmentComponent()
@@ -191,11 +193,11 @@ class SerialUI(BaseUIComponent):
         self += self._ansi
         self += Worker(process=False ,workers=20)
 
-    def updateDisplay(self, win, data, bg_color, fg_color):
+    def updateDisplay(self, win, data, ts, bg_color, fg_color):
         win["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
 
     def DisplayData(self, data, ts, bg_color, fg_color):
-        self.fire(task(self.updateDisplay, self.window, data, bg_color, fg_color))
+        self.fire(task(self.updateDisplay, self.window, data, ts, bg_color, fg_color))
         # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
         # self.window.refresh()
 
