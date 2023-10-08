@@ -2,9 +2,11 @@ from collections import deque
 import PySimpleGUI as sg
 from baseui import BaseUIComponent
 import serial.tools.list_ports
-from circuits import Component, Event, Timer
+from circuits import Component, Event, Timer, Worker, task
 from circuits.io.events import close, read, open, write, opened, closed, error
-from event import SegmentData, SetSegmentMode
+from event import SegmentData, SetSegmentMode, DisplayData
+from datetime import datetime
+from stransi import Ansi, SetColor
 
 class evtask(Event):
     """
@@ -16,7 +18,7 @@ class MySerial(Component):
         定时从串口读取数据
     """
     channel = "serial"
-    def __init__(self, port=None, baudrate=115200, timeout=0.05, bufsize=4096):
+    def __init__(self, port=None, baudrate=115200, timeout=0.1, bufsize=4096):
         super().__init__()
         self.port = port
         self.baudrate = baudrate
@@ -60,7 +62,9 @@ class MySerial(Component):
             return
         if self._ser.in_waiting > 0:
             data = self._ser.read(self._ser.in_waiting)
-            self.fire(read(data), self.channel)
+            #时间戳
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            self.fire(read(data, now), self.channel)
         #发送数据
         if self._wrbuf:
             try:
@@ -76,6 +80,7 @@ class MySerial(Component):
                 self.close()
         #判断closeflag, 如果为True, 关闭串口
         if self._closeflag:
+            self._closeflag = False
             self._ser.close()
             self._ser = None
             if self._timer is not None:
@@ -97,19 +102,69 @@ class SerialSegmentComponent(Component):
     def __init__(self, mode="text", channel="serial"):
         super(SerialSegmentComponent, self).__init__(channel=channel)
         self._mode = mode
+        self._last_hex_time = None
     
     def read(self, *arg):
-        print("read:", arg)
+        data = arg[0]
         if self._mode == "text":
             #文本模式
-            pass
+            for line in data.splitlines(keepends=True):
+                self.fire(SegmentData(line, arg[1], "text"), self.channel)
         else :
-            #HEX模式
-            pass
+            #HEX模式,将数据转为hex string
+            #每隔50ms分段
+            #TODO: 使用component来实现Hex数据的分段
+            if self._last_hex_time:
+                datetime.now() - self._last_hex_time > 0.05
+                self.fire(SegmentData(b"\n", arg[1], "text"), self.channel)
+            data = data.hex()
+            self.fire(SegmentData(data, arg[1], "hex"), self.channel)
+            self._last_hex_time = datetime.now()
     
     def SetSegmentMode(self, *arg):
         pass
 
+class Ansi2DisplayConverter(Component):
+    def __init__(self, fg_color="#000000", bg_color="#FFFFFF", channel="serial"):
+        super(Ansi2DisplayConverter, self).__init__(channel=channel)
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+        self.default_bg_color = bg_color
+        self.default_fg_color = fg_color
+        self.bold = False
+        #TODO:支持粗体，斜体，下划线
+    
+    def SetColor(self, bg_color, fg_color):
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+    def SetDefaultColor(self, bg_color, fg_color):
+        self.default_bg_color = bg_color
+        self.default_fg_color = fg_color
+    
+    def _cvtColor(self, color):
+        return "#{:x}".format(color) 
+    
+    def SegmentData(self, *arg):
+        data = arg[0]
+        ts = arg[1]
+        mode = arg[2]
+        if mode == "hex":
+            self.fire(DisplayData(data, ts, self.bg_color, self.fg_color), self.channel)
+            return
+        for t in Ansi(data.decode()).instructions():
+            if isinstance(t, str):
+                self.fire(DisplayData(t, ts, self.bg_color, self.fg_color), self.channel)
+            elif isinstance(t, SetColor):
+                if t.role.name == "FOREGROUND":
+                    if t.color:
+                        self.fg_color = self._cvtColor(t.color.hex.hex_code)
+                    else:
+                        self.fg_color = self.default_fg_color
+                else:
+                    if t.color:
+                        self.bg_color = self._cvtColor(t.color.hex.hex_code)
+                    else:
+                        self.bg_color = self.default_bg_color
 
 class SerialUI(BaseUIComponent):
     def __init__(self):
@@ -126,12 +181,24 @@ class SerialUI(BaseUIComponent):
         self.layout = [
             [sg.T("Port:"), sg.Combo(port_list, key="-PORTLIST-", enable_events=True), sg.T("Baudrate:"), sg.Combo(self.baudrates, default_value="115200", key="-BAUDRATELIST-", enable_events=True), sg.B("Open", key="-OPENCLOSE-")],
             [sg.Multiline(size=(100, 50), key="-RECVTEXT-", expand_x=True, expand_y=True)],
-            [sg.I(key="-SENDTEXT-"),sg.B("Send", key="-SEND-")]
+            [sg.I(key="-SENDTEXT-", expand_x=True),sg.B("Send", key="-SEND-")]
         ]
-        super().__init__("Serial", self.layout, debug=True)
+        super().__init__("Serial", self.layout, debug=False)
         self._ser = MySerial()
         self += self._ser
-        
+        self += SerialSegmentComponent()
+        self._ansi = Ansi2DisplayConverter()
+        self += self._ansi
+        self += Worker(process=False ,workers=20)
+
+    def updateDisplay(self, win, data, bg_color, fg_color):
+        win["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
+
+    def DisplayData(self, data, ts, bg_color, fg_color):
+        self.fire(task(self.updateDisplay, self.window, data, bg_color, fg_color))
+        # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
+        # self.window.refresh()
+
     def UIEvent(self, *arg):
         event = arg[0]
         values = arg[1]
