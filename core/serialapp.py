@@ -131,16 +131,16 @@ class SerialSegmentComponent(Component):
     def SetSegmentMode(self, *arg):
         pass
 
-class Ansi2DisplayConverter(Component):
+class Ansi2HtmlConverter(Component):
     def __init__(self, fg_color="black", bg_color="white", channel="serial"):
-        super(Ansi2DisplayConverter, self).__init__(channel=channel)
+        super(Ansi2HtmlConverter, self).__init__(channel=channel)
         self.bg_color = bg_color
         self.fg_color = fg_color
         self.default_bg_color = bg_color
         self.default_fg_color = fg_color
         self.bold = False
-        self._colorflag = False
-        #TODO:支持粗体，斜体，下划线
+        self.stroke = False
+        self.strong = False
     
     def SetColor(self, bg_color, fg_color):
         self.bg_color = bg_color
@@ -160,27 +160,45 @@ class Ansi2DisplayConverter(Component):
         if mode == "hex":
             self.fire(DisplayData(data, ts, self.bg_color, self.fg_color), self.channel)
             return
+        #html format <p>text<span style="color:fg_color background-color:bg_color">color</span></p>
+        #每次处理一行
+        html = "<p>"
         for t in Ansi(data).instructions():
             if isinstance(t, str):
-                self.fire(DisplayData(t, ts, self.bg_color, self.fg_color), self.channel)
+                # self.fire(DisplayData(t, ts, self.bg_color, self.fg_color), self.channel)
+                if self.bold:
+                    fontWeight = "bold"
+                else:
+                    fontWeight = "normal"
+                #TODO: 增加stroke和strong的处理
+                html += '<span style="color:{};background-color:{};font-weight:{};">{}</span>'.format(self.fg_color, self.bg_color, fontWeight, t)
             elif isinstance(t, SetAttribute):
-                if self._colorflag:
+                if t.attribute.name == "BOLD":
+                    self.bold = True
+                elif t.attribute.name == "STROKE":
+                    self.stroke = True
+                elif t.attribute.name == "STRONG":
+                    self.strong = True
+                elif t.attribute.name == "NORMAL":
                     self._colorflag = False
                     self.fg_color = self.default_fg_color
                     self.bg_color = self.default_bg_color
+                    self.bold = False
+                    self.stroke = False
+                    self.strong = False
             elif isinstance(t, SetColor):
                 if t.role.name == "FOREGROUND":
                     if t.color:
                         self.fg_color = self._cvtColor(t.color)
-                        self._colorflag = True
                     else:
                         self.fg_color = self.default_fg_color
                 else:
                     if t.color:
                         self.bg_color = self._cvtColor(t.color)
-                        self._colorflag = True
                     else:
                         self.bg_color = self.default_bg_color
+        html += "</p>"
+        self.fire(DisplayData(html, ts, self.bg_color, self.fg_color), self.channel)
 
 
 class SerialUI(Component):
@@ -208,7 +226,7 @@ class SerialUI(Component):
         self._ser = MySerial()
         self += self._ser
         self += SerialSegmentComponent()
-        self._ansi = Ansi2DisplayConverter()
+        self._ansi = Ansi2HtmlConverter()
         self += self._ansi
 
         #setup ui
@@ -242,19 +260,8 @@ class SerialUI(Component):
             self.fire(close(), self._ser.channel)
             # self._display_queue.append((close(), self._ser.channel))
             self.openclose = "Open"
-
-    # def evUpdateUI(self):
-    #     while len(self._display_queue) > 0:
-    #         ev, channel = self._display_queue.popleft()
-    #         print("fire event: ", ev, channel)
-    #         self.fire(ev, channel)
     
     def DisplayData(self, data, ts, bg_color, fg_color):
-        # self._display_queue.append((data, ts, bg_color, fg_color))
-        # self.window["-RECVTEXT-"].update(value=data, append=True, text_color_for_value=fg_color, background_color_for_value=bg_color, autoscroll=True)
-        # self.window.refresh()
-        data = """<p style="color:{};background-color:{};">{}</p>""".format(fg_color, bg_color, data)
-        # self._log.push(data)
         self.recvtxt += data
         self.scroll.scroll_to(percent=1.0)
 
