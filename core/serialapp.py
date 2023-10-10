@@ -247,7 +247,8 @@ class SerialUI(Component):
         # self += self._timer
     
     def onSend(self):
-        print("send:", self.sendtxt)
+        # print("send:", self.sendtxt)
+        self.fire(write(self.sendtxt.encode()), self._ser.channel)
 
     def onOpenClose(self, e):
         if not self.running:

@@ -1,0 +1,5 @@
+stransi
+circuits
+nicegui
+pyserial
+pywebview
