@@ -1,5 +1,5 @@
 from collections import deque
-from baseui import BaseUIComponent
+# from baseui import BaseUIComponent
 import serial.tools.list_ports
 from circuits import Component, Event, Timer, Worker, task, Debugger
 from circuits.io.events import close, read, open, write, opened, closed, error
@@ -7,15 +7,21 @@ from event import SegmentData, SetSegmentMode, DisplayData
 from datetime import datetime
 from stransi import Ansi, SetColor, SetAttribute
 from nicegui import ui
+from builtins import open as OpenFile
 
 class evtask(Event):
     """
         串口定时处理事件
     """
 
-class evUpdateUI(Event):
+class evStartRecord(Event):
     """
-        更新UI事件
+        开始记录数据
+    """
+
+class evStopRecord(Event):
+    """
+        停止记录数据
     """
 
 class MySerial(Component):
@@ -205,29 +211,30 @@ class FileSaver(Component):
         保存数据(DisplayData)到文件,
         文件格式：串口名_时间戳.log
     """
+    channel = "serial"
     def __init__(self, channel="serial"):
         super(FileSaver, self).__init__(channel=channel)
-        self._file = None
+        self.f = None
         self._filename = None
     
-    def startRecord(self, filename):
+    def evStartRecord(self, filename):
         if not filename:
             return   
-        if self._file is not None:
-            self._file.close()
+        if self.f is not None:
+            self.f.close()
         self._filename = filename
-        self._file = open(filename, "w")
+        self.f = OpenFile(filename, "w", encoding="utf-8")
     
-    def stopRecord(self):
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+    def evStopRecord(self):
+        if self.f is not None:
+            self.f.close()
+            self.f = None
             self._filename = None
     
     def DisplayData(self, *arg):
-        if self._file is None:
+        if self.f is None:
             return
-        self._file.write(arg[0])
+        self.f.write(arg[0])
 
 
 class SerialUI(Component):
@@ -287,9 +294,9 @@ class SerialUI(Component):
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
                 
-                self._display_queue = deque()
-                self._timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
-                self += self._timer
+                # self._display_queue = deque()
+                # self._timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
+                # self += self._timer
     
     def onSend(self):
         # print("send:", self.sendtxt)
@@ -300,13 +307,15 @@ class SerialUI(Component):
             self.start()
         if self.openclose == "Open":
             #保存文件
-            filename = self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".log"
-            self.record.startRecord(filename)
+            filename = "./" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
+            self.fire(evStartRecord(filename), "serial")
+            # self.record.startRecord(filename)
             self.fire(open(port=self.port, baudrate=self.baud), self._ser.channel)
             # self._display_queue.append((open(self.port, baudrate=self.baud), self._ser.channel))
             self.openclose = "Close"
         else:
-            self.record.stopRecord()
+            self.fire(evStopRecord(), "serial")
+            # self.record.stopRecord()
             self.fire(close(), self._ser.channel)
             # self._display_queue.append((close(), self._ser.channel))
             self.openclose = "Open"
