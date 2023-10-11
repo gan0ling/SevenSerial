@@ -200,6 +200,35 @@ class Ansi2HtmlConverter(Component):
         html += "</p>"
         self.fire(DisplayData(html, ts, self.bg_color, self.fg_color), self.channel)
 
+class FileSaver(Component):
+    """
+        保存数据(DisplayData)到文件,
+        文件格式：串口名_时间戳.log
+    """
+    def __init__(self, channel="serial"):
+        super(FileSaver, self).__init__(channel=channel)
+        self._file = None
+        self._filename = None
+    
+    def startRecord(self, filename):
+        if not filename:
+            return   
+        if self._file is not None:
+            self._file.close()
+        self._filename = filename
+        self._file = open(filename, "w")
+    
+    def stopRecord(self):
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+            self._filename = None
+    
+    def DisplayData(self, *arg):
+        if self._file is None:
+            return
+        self._file.write(arg[0])
+
 
 class SerialUI(Component):
     channel = "serial"
@@ -228,23 +257,39 @@ class SerialUI(Component):
         self += SerialSegmentComponent()
         self._ansi = Ansi2HtmlConverter()
         self += self._ansi
+        self.record = FileSaver()
+        self += self.record
 
         #setup ui
-        with ui.row().classes("w-full"):
-            ui.select(self.port_list, label="Port").bind_value(self, "port")
-            ui.select(self.baudrates, label="Baudrate").bind_value(self,"baud")
-            ui.button(on_click=self.onOpenClose).bind_text(self, "openclose")
-            ui.input().bind_value(self, "sendtxt")
-            ui.button(text="Send", on_click=self.onSend)
-        ui.separator()
-        # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
-        self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
-        with self.scroll:
-            ui.html().bind_content(self, "recvtxt")
-        
-        # self._display_queue = deque()
-        # self._timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
-        # self += self._timer
+        self.topTabs = ui.tabs().classes('w-full')
+        self.tabs = []
+        with self.topTabs:
+            self.tabs.append(ui.tab('Serial-0'))
+        self.panels = ui.tab_panels(self.topTabs, value=self.tabs[0]).classes('w-full')
+        with self.panels:
+            with ui.tab_panel(self.tabs[0]):
+                with ui.row().classes("w-full"):
+                    #menu
+                    self.menu = ui.menu()
+                    with ui.button(icon='menu'):
+                        with self.menu:
+                            ui.menu_item("File")
+                            ui.menu_item("Edit")
+                            ui.menu_item("Plugins")
+                    ui.select(self.port_list, label="Port").bind_value(self, "port")
+                    ui.select(self.baudrates, label="Baudrate").bind_value(self,"baud")
+                    ui.button(on_click=self.onOpenClose).bind_text(self, "openclose")
+                    ui.input().bind_value(self, "sendtxt")
+                    ui.button(text="Send", on_click=self.onSend)
+                ui.separator()
+                # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
+                self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
+                with self.scroll:
+                    ui.html().bind_content(self, "recvtxt")
+                
+                self._display_queue = deque()
+                self._timer = Timer(0.1, evUpdateUI(), self.channel, persist=True)
+                self += self._timer
     
     def onSend(self):
         # print("send:", self.sendtxt)
@@ -254,10 +299,14 @@ class SerialUI(Component):
         if not self.running:
             self.start()
         if self.openclose == "Open":
+            #保存文件
+            filename = self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".log"
+            self.record.startRecord(filename)
             self.fire(open(port=self.port, baudrate=self.baud), self._ser.channel)
             # self._display_queue.append((open(self.port, baudrate=self.baud), self._ser.channel))
             self.openclose = "Close"
         else:
+            self.record.stopRecord()
             self.fire(close(), self._ser.channel)
             # self._display_queue.append((close(), self._ser.channel))
             self.openclose = "Open"
@@ -288,6 +337,6 @@ class SerialUI(Component):
 if __name__ in {"__main__", "__mp_main__"}:
     myUI = SerialUI()
     myUI.start()
-    ui.run(native=True, reload=False)
+    ui.run(native=True, reload=True)
     myUI.stop()
     myUI.join()
