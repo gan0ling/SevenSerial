@@ -1,8 +1,9 @@
 from collections import deque
 # from baseui import BaseUIComponent
 import serial.tools.list_ports
-from circuits import Component, Event, Timer, Worker, task, Debugger
+from circuits import Component, Event, Timer, Worker, task, Debugger, ipc
 from circuits.io.events import close, read, open, write, opened, closed, error
+from circuits.io import File
 from event import SegmentData, SetSegmentMode, DisplayData
 from datetime import datetime
 from stransi import Ansi, SetColor, SetAttribute
@@ -264,8 +265,11 @@ class SerialUI(Component):
         self += SerialSegmentComponent()
         self._ansi = Ansi2HtmlConverter()
         self += self._ansi
+        self._file = None
         self.record = FileSaver()
-        self += self.record
+        self.record_init = False
+        # self += self.record
+        # self.record.start()
 
         #setup ui
         self.topTabs = ui.tabs().classes('w-full')
@@ -307,22 +311,29 @@ class SerialUI(Component):
             self.start()
         if self.openclose == "Open":
             #保存文件
+            if not self.record_init:
+                self.record_init = True
+                self.record.start(process=True, link=self)
             filename = "./" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
-            self.fire(evStartRecord(filename), "serial")
+            self.fire(ipc(evStartRecord(filename)), "serial")
             # self.record.startRecord(filename)
             self.fire(open(port=self.port, baudrate=self.baud), self._ser.channel)
             # self._display_queue.append((open(self.port, baudrate=self.baud), self._ser.channel))
             self.openclose = "Close"
         else:
-            self.fire(evStopRecord(), "serial")
-            # self.record.stopRecord()
+            self.fire(ipc(evStopRecord()), "serial")
+            self.record.stopRecord()
             self.fire(close(), self._ser.channel)
             # self._display_queue.append((close(), self._ser.channel))
             self.openclose = "Open"
+            if self._file:
+                self._file.close()
+                self._file = None
     
     def DisplayData(self, data, ts, bg_color, fg_color):
         self.recvtxt += data
         self.scroll.scroll_to(percent=1.0)
+        self.fire(ipc(DisplayData(data, ts, bg_color, fg_color)), "serial")
 
     def UIEvent(self, *arg):
         event = arg[0]
