@@ -8,6 +8,7 @@ from manager import ActorManager
 from datetime import datetime
 import time
 from stransi import Ansi, SetColor, SetAttribute
+import time
 
 logger = logging.getLogger("pykka")
 class LoopActor(ThreadingActor):
@@ -259,10 +260,11 @@ class FileSaver(ThreadingActor):
             output:
                 None
     """
-    def __init__(self, channel="serial"):
+    def __init__(self): 
         super().__init__()
         self.f = None
         self._filename = None
+        self._ts = time.time()
         m = ActorManager.singleton()
         m.subscribe('/file_saver/start_record', self.actor_ref)
         m.subscribe('/file_saver/stop_record', self.actor_ref)
@@ -286,6 +288,7 @@ class FileSaver(ThreadingActor):
         if self.f is None:
             return
         self.f.write(data)
+        self.f.flush()
     
     def on_receive(self, message: Any) -> Any:
         topic = message.get('topic')
