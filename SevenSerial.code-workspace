@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../../../download/nicegui-main"
+		},
+		{
+			"path": "../../../../../download/circuits-master"
 		}
 	],
 	"settings": {}

@@ -1,4 +1,5 @@
 from collections import defaultdict
+from pykka import ActorRegistry
 
 class ActorManager:
 
@@ -16,6 +17,14 @@ class ActorManager:
 
     def unsubscribe(self, topic, subscriber):
         self.subscribers[topic].discard(subscriber)
+    
+    def stop_all(self):
+        ActorRegistry.stop_all(block=False)
+        # for topic in self.subscribers:
+        #     for subscriber in self.subscribers[topic]:
+        #         if hasattr(subscriber, 'stop'):
+        #             subscriber.stop()
+
 
     def tell(self, topic, message=None, actor_ref=None):
         #发送消息，不等待返回值

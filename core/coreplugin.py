@@ -65,6 +65,9 @@ class SerialPlugin(LoopActor):
         self.manager.subscribe('/serial/open', self.actor_ref)
         self.manager.subscribe('/serial/close', self.actor_ref)
         self.manager.subscribe('/serial/write', self.actor_ref)
+
+    def on_stop(self) -> None:
+        super().on_stop() 
     
     def on_loop(self) -> None:
         if self.serial and self.serial.is_open and self.serial.in_waiting:
@@ -72,7 +75,6 @@ class SerialPlugin(LoopActor):
             #发布消息，topic为/serial/read data为data ts为当前时间戳
             now = datetime.now().strftime("%m-%d %H:%M:%S.%f")[:-3]
             self.manager.tell('/data/raw', {'topic':'/data/raw', 'port':self.port,'data': data, 'ts': now})
-            print(data)
         else:
             time.sleep(self.timeout)
 
@@ -133,6 +135,9 @@ class SerialSegmentPlugin(ThreadingActor):
         m.subscribe('/data/raw', self.actor_ref)
         m.subscribe('/data/set_segment_mode', self.actor_ref)
     
+    def on_stop(self) -> None:
+        super().on_stop()
+    
     def on_receive(self, message: Any) -> Any:
         topic = message.get('topic')
         if topic == '/data/raw':
@@ -144,7 +149,6 @@ class SerialSegmentPlugin(ThreadingActor):
         m = ActorManager.singleton()
         if self._mode == "text":
             #文本模式
-            print("segment: ", data)
             for line in data.splitlines(keepends=True):
                 #为每行数据增加时间戳
                 line = "[" + ts + "] " + line
@@ -200,7 +204,6 @@ class Ansi2HtmlConverter(ThreadingActor):
     
     def on_SegmentData(self, data, ts, mode):
         m = ActorManager.singleton()
-        print("convert: ", data)
         if mode == "hex":
             m.tell('/data/display_data', {'data':data, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})
             return

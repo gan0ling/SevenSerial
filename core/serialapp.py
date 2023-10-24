@@ -2,8 +2,10 @@ from collections import deque
 import serial.tools.list_ports
 from datetime import datetime
 from manager import ActorManager
-from nicegui import ui
+from nicegui import ui, app
 from coreplugin import SerialPlugin, SerialSegmentPlugin, Ansi2HtmlConverter, FileSaver
+import atexit
+from signal import SIGINT, SIGTERM, signal as set_signal_handler
 
 class SerialUI(object):
     def __init__(self):
@@ -54,7 +56,8 @@ class SerialUI(object):
                 self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
-                
+
+
     def onSend(self):
         m = ActorManager.singleton()
         m.tell("/serial/write", {'data':self.sendtxt}, actor_ref=self._ser_ref)
@@ -88,9 +91,11 @@ class SerialUI(object):
             self.recvtxt += data
             self.scroll.scroll_to(percent=1.0)
     
+def myExit():
+    ActorManager.singleton().stop_all()
 
-
+app.on_shutdown(myExit)
 
 if __name__ in {"__main__", "__mp_main__"}:
     myUI = SerialUI()
-    ui.run(native=True, reload=True)
+    ui.run(native=True, reload=False)
