@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../../../../../download/nicegui-main"
 		}
 	],
 	"settings": {}
