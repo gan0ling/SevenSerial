@@ -2,10 +2,10 @@ from collections import deque
 import serial.tools.list_ports
 from datetime import datetime
 from manager import ActorManager
-from nicegui import ui, app
 from coreplugin import SerialPlugin, SerialSegmentPlugin, Ansi2HtmlConverter, FileSaver
-import atexit
-from signal import SIGINT, SIGTERM, signal as set_signal_handler
+from nicegui import ui, app
+import logging, signal
+import pykka.debug
 
 class SerialUI(object):
     def __init__(self):
@@ -97,5 +97,7 @@ def myExit():
 app.on_shutdown(myExit)
 
 if __name__ in {"__main__", "__mp_main__"}:
+    logging.basicConfig(level=logging.DEBUG)
+    signal.signal(signal.SIGUSR1, pykka.debug.log_thread_tracebacks)
     myUI = SerialUI()
     ui.run(native=True, reload=False)
