@@ -6,7 +6,7 @@ import nicegui
 cmd = [
     'python',
     '-m', 'PyInstaller',
-    'core/serialapp.py', # your main file with ui.run()
+    'serialapp.py', # your main file with ui.run()
     '--name', 'SevenSerial', # name of your app
     '--onefile',
     #'--windowed', # prevent console appearing, only use with ui.run(native=True, ...)

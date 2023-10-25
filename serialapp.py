@@ -1,11 +1,11 @@
 from collections import deque
 import serial.tools.list_ports
 from datetime import datetime
-from manager import ActorManager
-from coreplugin import SerialPlugin, SerialSegmentPlugin, Ansi2HtmlConverter, FileSaver
+from core.manager import ActorManager
+from core.coreplugin import SerialPlugin, SerialSegmentPlugin, Ansi2HtmlConverter, FileSaver
+from core.sourceplugin import JLinkRttPlugin
 from nicegui import ui, app
-import logging, signal
-import pykka.debug
+import logging
 
 class SerialUI(object):
     def __init__(self):
@@ -19,6 +19,7 @@ class SerialUI(object):
         self.port_list = []
         for port in ports:
             self.port_list.append(port.device)
+        self.port_list.append('JLink')
         super().__init__()
         self.port = self.port_list[0]
         self.baud = 115200
@@ -29,6 +30,8 @@ class SerialUI(object):
         self._segment_ref = None
         self._conver_ref = None
         self._saver_ref = None
+        self._vertical_percentage = 1.0
+        self._jlink_ref = None
         ActorManager.singleton().subscribe('/data/display_data', self)
         #setup ui
         self.topTabs = ui.tabs().classes('w-full')
@@ -53,9 +56,17 @@ class SerialUI(object):
                     ui.button(text="Send", on_click=self.onSend)
                 ui.separator()
                 # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
-                self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
+                self.scroll = ui.scroll_area(on_scroll=lambda e : self.on_scroll(e)).classes("w-full").style("height: 84vh;")
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
+
+    def on_scroll(self, e):
+        #当用户向上滚动时，停止自动滚动
+        #当用户向下滚动到底部时，自动滚动
+        # logging.debug("scroll: {}-{}".format(e.vertical_percentage, self._vertical_percentage))
+        # self._vertical_percentage = e.vertical_percentage
+        pass
+
 
 
     def onSend(self):
@@ -72,6 +83,18 @@ class SerialUI(object):
             self._conver_ref = Ansi2HtmlConverter.start()
         if not self._saver_ref:
             self._saver_ref = FileSaver.start()
+        if self.port == 'JLink':
+            if not self._jlink_ref:
+                self._jlink_ref = JLinkRttPlugin.start()
+            if self.openclose == "Open":
+                logging.debug("open jlink rtt")
+                m.tell("/jlink_rtt/open", {'target':'EFR32BG22CxxxF512'})
+                self.openclose = "Close"
+            else:
+                logging.debug("close jlink rtt")
+                self.openclose = "Open"
+                m.tell("/jlink_rtt/close")
+            return
         if self.openclose == "Open":
             #保存文件
             filename = "./log/" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
@@ -89,7 +112,8 @@ class SerialUI(object):
         if topic == '/data/display_data':
             data = message.get('data')
             self.recvtxt += data
-            self.scroll.scroll_to(percent=1.0)
+            if self._vertical_percentage == 1.0:
+                self.scroll.scroll_to(percent=1.0)
     
 def myExit():
     ActorManager.singleton().stop_all()
@@ -97,7 +121,6 @@ def myExit():
 app.on_shutdown(myExit)
 
 if __name__ in {"__main__", "__mp_main__"}:
-    logging.basicConfig(level=logging.DEBUG)
-    signal.signal(signal.SIGUSR1, pykka.debug.log_thread_tracebacks)
+    logging.basicConfig(level=logging.INFO)
     myUI = SerialUI()
     ui.run(native=True, reload=False)

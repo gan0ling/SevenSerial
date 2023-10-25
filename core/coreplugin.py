@@ -4,7 +4,7 @@ from pykka import ThreadingActor, Actor, ActorRegistry
 import logging
 import sys
 import queue
-from manager import ActorManager
+from core.manager import ActorManager
 from datetime import datetime
 import time
 from stransi import Ansi, SetColor, SetAttribute
