@@ -47,9 +47,9 @@ class SerialUI(object):
             with ui.tab_panel(self.tabs[0]):
                 with ui.row().classes("w-full"):
                     #menu
-                    self.menu = ui.menu()
+                    # self.menu = ui.menu()
                     with ui.button(icon='menu'):
-                        with self.menu:
+                        with ui.menu() as master_menu:
                             ui.menu_item("File")
                             ui.menu_item("Edit")
                             ui.menu_item("Plugins")
@@ -63,7 +63,7 @@ class SerialUI(object):
                 self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
-                    with ui.context_menu().on('show', self.onContextMenuShow).on('hide', self.onContextMenuHide):
+                    with ui.context_menu().on('show', self.onContextMenuShow).on('hide', self.onContextMenuHide) as context_menu:
                         ui.menu_item("Clear", on_click=self.onClear)
                         ui.menu_item("Scroll", on_click=self.onAutoScroll).bind_text(self, "scroll_menu")
 
