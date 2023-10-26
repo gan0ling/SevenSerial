@@ -32,6 +32,10 @@ class SerialUI(object):
         self._saver_ref = None
         self._vertical_percentage = 1.0
         self._jlink_ref = None
+        self.jlink_target = None
+        self.scroll_menu = "Scroll: Off"
+        self._enable_scroll = True
+        self._context_menu_open = False
         ActorManager.singleton().subscribe('/data/display_data', self)
         #setup ui
         self.topTabs = ui.tabs().classes('w-full')
@@ -49,24 +53,44 @@ class SerialUI(object):
                             ui.menu_item("File")
                             ui.menu_item("Edit")
                             ui.menu_item("Plugins")
-                    ui.select(self.port_list, label="Port").bind_value(self, "port")
+                    ui.select(self.port_list, label="Port", on_change=self.onPortChange).bind_value(self, "port")
                     ui.select(self.baudrates, label="Baudrate").bind_value(self,"baud")
                     ui.button(on_click=self.onOpenClose).bind_text(self, "openclose")
                     ui.input().bind_value(self, "sendtxt")
                     ui.button(text="Send", on_click=self.onSend)
                 ui.separator()
                 # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
-                self.scroll = ui.scroll_area(on_scroll=lambda e : self.on_scroll(e)).classes("w-full").style("height: 84vh;")
+                self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
+                    with ui.context_menu().on('show', self.onContextMenuShow).on('hide', self.onContextMenuHide):
+                        ui.menu_item("Clear", on_click=self.onClear)
+                        ui.menu_item("Scroll", on_click=self.onAutoScroll).bind_text(self, "scroll_menu")
 
-    def on_scroll(self, e):
-        #当用户向上滚动时，停止自动滚动
-        #当用户向下滚动到底部时，自动滚动
-        # logging.debug("scroll: {}-{}".format(e.vertical_percentage, self._vertical_percentage))
-        # self._vertical_percentage = e.vertical_percentage
-        pass
+    def onContextMenuShow(self):
+        self._context_menu_open = True
+    
+    def onContextMenuHide(self):
+        self._context_menu_open = False
 
+    def onAutoScroll(self):
+        #first disable scroll, 否则context_menu会跟随滚动
+        self._enable_scroll = not self._enable_scroll
+        if self._enable_scroll:
+            self.scroll_menu = "Scroll: Off"
+        else:
+            self.scroll_menu = "Scroll: On"
+    
+    def onClear(self):
+        self.recvtxt = ''
+    
+    def onPortChange(self, e):
+        if e.value == "JLink":
+            # 弹出窗口来选择JLink需要连接的设备
+            with ui.dialog() as dialog, ui.card():
+                ui.input(label="Target").bind_value(self, "jlink_target")
+                ui.button(text="OK", on_click=dialog.close)
+            dialog.open()
 
 
     def onSend(self):
@@ -112,7 +136,7 @@ class SerialUI(object):
         if topic == '/data/display_data':
             data = message.get('data')
             self.recvtxt += data
-            if self._vertical_percentage == 1.0:
+            if self._enable_scroll and not self._context_menu_open:
                 self.scroll.scroll_to(percent=1.0)
     
 def myExit():
