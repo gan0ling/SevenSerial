@@ -1,11 +1,11 @@
-from collections import deque
 import serial.tools.list_ports
 from datetime import datetime
 from core.manager import ActorManager
-from core.coreplugin import SerialPlugin, SerialSegmentPlugin, Ansi2HtmlConverter, FileSaver
-from core.sourceplugin import JLinkRttPlugin
 from nicegui import ui, app
 import logging
+from yapsy.ConfigurablePluginManager import ConfigurablePluginManager
+from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor, HighlightActor 
+from configparser import ConfigParser
 
 class SerialUI(object):
     def __init__(self):
@@ -26,18 +26,38 @@ class SerialUI(object):
         self.openclose = "Open"
         self.sendtxt = ""
         self.recvtxt = ""
-        self._ser_ref = None
-        self._segment_ref = None
-        self._conver_ref = None
-        self._saver_ref = None
+        self.config_parser = ConfigParser()
+        self.config_file = 'app.ini'
+        self.config_parser.read(self.config_file)
+        self.plugin_manager = ConfigurablePluginManager(
+            configparser_instance=self.config_parser,
+            categories_filter={
+                "Source": SourceActor,
+                "Filter": FilterActor,
+                "Convert": ConvertActor,
+                "Highlight": HighlightActor,
+                "Storage": StorageActor,
+            },
+            directories_list=["plugins"],
+            plugin_info_ext="ini",
+            config_change_trigger=self.update_config
+        )
+        self.plugin_manager.collectPlugins()
+        self._activate = False
+        # self._ser_ref = None
+        # self._segment_ref = None
+        # self._conver_ref = None
+        # self._saver_ref = None
+        # self._jlink_ref = None
+
         self._vertical_percentage = 1.0
-        self._jlink_ref = None
         self.jlink_target = None
         self.scroll_menu = "Scroll: Off"
         self._enable_scroll = True
         self._context_menu_open = False
-        ActorManager.singleton().subscribe('/data/display_data', self)
+        ActorManager.singleton().subscribe('/display_data', self)
         #setup ui
+        ui.keyboard(on_key=self.onKey)
         self.topTabs = ui.tabs().classes('w-full')
         self.tabs = []
         with self.topTabs:
@@ -45,7 +65,7 @@ class SerialUI(object):
         self.panels = ui.tab_panels(self.topTabs, value=self.tabs[0]).classes('w-full')
         with self.panels:
             with ui.tab_panel(self.tabs[0]):
-                with ui.row().classes("w-full"):
+                with ui.row().classes("w-full q-pa-sm"):
                     #menu
                     # self.menu = ui.menu()
                     with ui.button(icon='menu'):
@@ -60,12 +80,18 @@ class SerialUI(object):
                     ui.button(text="Send", on_click=self.onSend)
                 ui.separator()
                 # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
-                self.scroll = ui.scroll_area().classes("w-full").style("height: 84vh;")
+                self.scroll = ui.scroll_area().classes("w-full").style("height: 76vh;")
                 with self.scroll:
                     ui.html().bind_content(self, "recvtxt")
                     with ui.context_menu().on('show', self.onContextMenuShow).on('hide', self.onContextMenuHide) as context_menu:
                         ui.menu_item("Clear", on_click=self.onClear)
                         ui.menu_item("Scroll", on_click=self.onAutoScroll).bind_text(self, "scroll_menu")
+    
+    def onKey(self, e):
+        if not e.action.keydown:
+            return
+        if e.key == 'f' and (e.modifiers.ctrl or e.modifiers.meta):
+            print("ctrl+f")
 
     def onContextMenuShow(self):
         self._context_menu_open = True
@@ -95,54 +121,81 @@ class SerialUI(object):
 
     def onSend(self):
         m = ActorManager.singleton()
-        m.tell("/serial/write", {'data':self.sendtxt}, actor_ref=self._ser_ref)
+        if self.port == 'JLink':
+            plugin = self.plugin_manager._component.getPluginByName('JLinkRttSourceActor', "Source")
+        else:
+            plugin = self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source")
+        m.tell("/write", {'data':self.sendtxt}, actor_ref=plugin.plugin_object.actor_ref)
 
     def onOpenClose(self, e):
         m = ActorManager.singleton()
-        if not self._ser_ref:
-            self._ser_ref = SerialPlugin.start(port=self.port, baudrate=self.baud)
-        if not self._segment_ref:
-            self._segment_ref = SerialSegmentPlugin.start()
-        if not self._conver_ref:
-            self._conver_ref = Ansi2HtmlConverter.start()
-        if not self._saver_ref:
-            self._saver_ref = FileSaver.start()
+        if not self._activate:
+            self._activate = True
+            self.plugin_manager.activatePluginByName('SerialSourceActor', "Source", save_state=False)
+            self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
+            self.plugin_manager.activatePluginByName('FileSaver', "Storage", save_state=False)
+            self.plugin_manager.activatePluginByName('AnsiConvertActor', "Convert", save_state=False)
         if self.port == 'JLink':
-            if not self._jlink_ref:
-                self._jlink_ref = JLinkRttPlugin.start()
+            plugin = self.plugin_manager._component.getPluginByName('JLinkRttSourceActor', "Source")
+            self.plugin_manager.activatePluginByName('JLinkRttSourceActor', "Source", save_state=False)
             if self.openclose == "Open":
-                logging.debug("open jlink rtt")
-                m.tell("/jlink_rtt/open", {'target':'EFR32BG22CxxxF512'})
+                msg = {
+                    'cmd': 'open',
+                    'target': 'EFR32BG22CxxxF512',
+                }
+                m.tell('/cmd', msg, actor_ref=plugin)
                 self.openclose = "Close"
             else:
                 logging.debug("close jlink rtt")
                 self.openclose = "Open"
-                m.tell("/jlink_rtt/close")
+                msg = {
+                    'cmd': 'close'
+                }
+                m.tell('/cmd', msg, actor_ref=plugin)
             return
         if self.openclose == "Open":
             #保存文件
             filename = "./log/" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
-            m.tell("/file_saver/start_record", {'filename':filename}, actor_ref=self._saver_ref)
-            m.tell("/serial/open", {'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self._ser_ref)
+            msg = {
+                'cmd': 'open',
+                'filename': filename
+            }
+            m.tell('/cmd', msg, actor_ref=self.plugin_manager._component.getPluginByName('FileStoreActor', "Storage").plugin_object.actor_ref)
+            m.tell("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source").plugin_object.actor_ref)
             self.openclose = "Close"
         else:
             # self._display_queue.append((close(), self._ser.channel))
-            m.tell('/file_saver/stop_record')
-            m.tell("/serial/close", actor_ref=self._ser_ref)
+            msg = {
+                'cmd': 'close'
+            }
+            actors = [
+                self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source").plugin_object.actor_ref,
+                self.plugin_manager._component.getPluginByName('FileStoreActor', "Storage").plugin_object.actor_ref,
+            ]
+            m.tell('/cmd', msg, actor_ref=actors)
             self.openclose = "Open"
     
     def tell(self, message):
         topic = message.get('topic')
-        if topic == '/data/display_data':
+        if topic == '/display_data':
             data = message.get('data')
             self.recvtxt += data
             if self._enable_scroll and not self._context_menu_open:
                 self.scroll.scroll_to(percent=1.0)
     
+    def update_config(self):
+        """
+        Write the content of the ConfigParser in a file.
+        """
+        cf = open(self.config_file,"w")
+        self.config_parser.write(cf)
+        cf.close()
+    
 def myExit():
     ActorManager.singleton().stop_all()
 
 app.on_shutdown(myExit)
+app.on_disconnect(myExit)
 
 if __name__ in {"__main__", "__mp_main__"}:
     logging.basicConfig(level=logging.INFO)

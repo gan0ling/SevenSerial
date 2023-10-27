@@ -1,5 +1,6 @@
 from collections import defaultdict
-from pykka import ActorRegistry
+from pykka import ActorRegistry, ActorRef
+import logging
 
 class ActorManager:
 
@@ -33,19 +34,24 @@ class ActorManager:
             message = {}
         if 'topic' not in message:
             message['topic'] = topic
-
+        # 检查actor_ref是否为ActorRef对象,或者list
+        if actor_ref:
+            if isinstance(actor_ref, list):
+                for subscriber in actor_ref:
+                    #如果actor_ref订阅了该消息，则发送
+                    if self.subscribers[topic].__contains__(subscriber):
+                        subscriber.tell(message)
+            elif isinstance(actor_ref, ActorRef):
+                if self.subscribers[topic].__contains__(actor_ref):
+                    actor_ref.tell(message)
+            return
         for subscriber in self.subscribers[topic]:
-            #当actor_ref不为空时，只发送给指定的actor
-            if actor_ref and subscriber != actor_ref:
-                continue
             subscriber.tell(message)
 
         # Handle wildcard subscriptions
         for subscribed_topic in self.subscribers:
             if subscribed_topic.endswith('*') and topic.startswith(subscribed_topic[:-1]):
                 for subscriber in self.subscribers[subscribed_topic]:
-                    if actor_ref and subscriber != actor_ref:
-                        continue
                     subscriber.tell(message)
     
     # def ask(self, topic, message, timeout=2, block=True):
