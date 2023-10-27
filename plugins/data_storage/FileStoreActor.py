@@ -1,7 +1,7 @@
 from core.plugintype import StorageActor 
 import time
 
-class FileSaver(StorageActor):
+class FileStoreActor(StorageActor):
     """
         保存数据(DisplayData)到文件,
         文件格式：串口名_时间戳.log
