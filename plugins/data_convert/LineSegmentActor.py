@@ -14,18 +14,16 @@ class LineSegmentActor(ConvertActor):
         super().__init__()
         self._mode = mode
         self._last_hex_time = None
-        #订阅消息
-        self.topic_manager.subscribe('/cmd', self.actor_ref)
-        self.topic_manager.subscribe('/SerialSourceActor/output', self.actor_ref)
     
-    def on_receive(self, message): 
-        topic = message.get('topic')
-        if topic == '/SerialSourceActor/output':
-            self.on_data(message.get('data'), message.get('ts'))
-        elif topic == '/cmd':
-            cmd = message.get('cmd')
+    def on_input(self, msg):
+        if 'data' in msg and 'ts' in msg:
+            self.on_data(msg.get('data'), msg.get('ts'))
+    
+    def on_cmd(self, msg):
+        if 'cmd' in msg:
+            cmd = msg.get('cmd')
             if cmd == 'set_mode':
-                self._mode = message.get('mode')
+                self._mode = msg.get('mode')
     
     def on_data(self, data, ts):
         if self._mode == "text":
@@ -33,7 +31,7 @@ class LineSegmentActor(ConvertActor):
             for line in data.splitlines(keepends=True):
                 #为每行数据增加时间戳
                 line = "[" + ts + "] " + line
-                self.topic_manager.tell('/LineSegmentActor/output', {'data':line, 'ts':ts, 'mode':'text'})
+                self.tell({'data':line, 'ts':ts, 'mode':'text'})
 
         else :
             #HEX模式,将数据转为hex string
@@ -41,8 +39,8 @@ class LineSegmentActor(ConvertActor):
             #TODO: 使用component来实现Hex数据的分段
             if self._last_hex_time:
                 datetime.now() - self._last_hex_time > 0.05
-                self.topic_manager.tell('/LineSegmentActor/output', {'data':'\n'+ts, 'ts':ts, 'mode':'hex'})
+                self.tell({'data':'\n'+ts, 'ts':ts, 'mode':'hex'})
             data = data.hex()
-            self.topic_manager.tell('/LineSegmentActor/output', {'data':data, 'ts':ts, 'mode':'hex'})
+            self.tell({'data':data, 'ts':ts, 'mode':'hex'})
             self._last_hex_time = datetime.now()
     

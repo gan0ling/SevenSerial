@@ -1,9 +1,8 @@
 import serial.tools.list_ports
 from datetime import datetime
-from core.manager import ActorManager
+from core.manager import TopicManager, MyConfigurablePluginManager
 from nicegui import ui, app
 import logging
-from yapsy.ConfigurablePluginManager import ConfigurablePluginManager
 from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor, HighlightActor 
 from configparser import ConfigParser
 
@@ -29,7 +28,7 @@ class SerialUI(object):
         self.config_parser = ConfigParser()
         self.config_file = 'app.ini'
         self.config_parser.read(self.config_file)
-        self.plugin_manager = ConfigurablePluginManager(
+        self.plugin_manager = MyConfigurablePluginManager(
             configparser_instance=self.config_parser,
             categories_filter={
                 "Source": SourceActor,
@@ -43,19 +42,21 @@ class SerialUI(object):
             config_change_trigger=self.update_config
         )
         self.plugin_manager.collectPlugins()
-        self._activate = False
-        # self._ser_ref = None
-        # self._segment_ref = None
-        # self._conver_ref = None
-        # self._saver_ref = None
-        # self._jlink_ref = None
 
-        self._vertical_percentage = 1.0
+        m = TopicManager.singleton()
+        m.subscribe('/Ansi2HtmlConverter/output', self)
+        #将各个actor的topic串联起来
+        #SerialSource/output -> LineSegment/input, LineSegment/output -> AnsiConvert/input, AnsiConvert/output -> FileStore/input
+        m.connect(self.plugin_manager.getActorByName('SerialSourceActor', "Source"), self.plugin_manager.getActorByName('LineSegmentActor', "Convert"))
+        m.connect(self.plugin_manager.getActorByName('LineSegmentActor', "Convert"), self.plugin_manager.getActorByName('Ansi2HtmlConverter', "Convert"))
+        m.connect(self.plugin_manager.getActorByName('Ansi2HtmlConverter', "Convert"), self.plugin_manager.getActorByName('FileStoreActor', "Storage"))
+        m.connect(self.plugin_manager.getActorByName('JLinkRttSourceActor', "Source"), self.plugin_manager.getActorByName('LineSegmentActor', "Convert"))
+
+
         self.jlink_target = None
         self.scroll_menu = "Scroll: Off"
         self._enable_scroll = True
         self._context_menu_open = False
-        ActorManager.singleton().subscribe('/display_data', self)
         #setup ui
         ui.keyboard(on_key=self.onKey)
         self.topTabs = ui.tabs().classes('w-full')
@@ -120,7 +121,7 @@ class SerialUI(object):
 
 
     def onSend(self):
-        m = ActorManager.singleton()
+        m = TopicManager.singleton()
         if self.port == 'JLink':
             plugin = self.plugin_manager._component.getPluginByName('JLinkRttSourceActor', "Source")
         else:
@@ -128,22 +129,18 @@ class SerialUI(object):
         m.tell("/write", {'data':self.sendtxt}, actor_ref=plugin.plugin_object.actor_ref)
 
     def onOpenClose(self, e):
-        m = ActorManager.singleton()
-        if not self._activate:
-            self._activate = True
-            self.plugin_manager.activatePluginByName('SerialSourceActor', "Source", save_state=False)
-            self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
-            self.plugin_manager.activatePluginByName('FileSaver', "Storage", save_state=False)
-            self.plugin_manager.activatePluginByName('AnsiConvertActor', "Convert", save_state=False)
+        m = TopicManager.singleton()
+        self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
+        self.plugin_manager.activatePluginByName('FileStoreActor', "Storage", save_state=False)
+        self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
         if self.port == 'JLink':
-            plugin = self.plugin_manager._component.getPluginByName('JLinkRttSourceActor', "Source")
-            self.plugin_manager.activatePluginByName('JLinkRttSourceActor', "Source", save_state=False)
+            plugin = self.plugin_manager.activatePluginByName('JLinkRttSourceActor', "Source", save_state=False)
             if self.openclose == "Open":
                 msg = {
                     'cmd': 'open',
                     'target': 'EFR32BG22CxxxF512',
                 }
-                m.tell('/cmd', msg, actor_ref=plugin)
+                m.tell('/cmd', msg, actor_ref=plugin.plugin_object.actor_ref)
                 self.openclose = "Close"
             else:
                 logging.debug("close jlink rtt")
@@ -151,8 +148,9 @@ class SerialUI(object):
                 msg = {
                     'cmd': 'close'
                 }
-                m.tell('/cmd', msg, actor_ref=plugin)
+                m.tell('/cmd', msg, actor_ref=plugin.plugin_object.actor_ref)
             return
+        self.plugin_manager.activatePluginByName('SerialSourceActor', "Source", save_state=False)
         if self.openclose == "Open":
             #保存文件
             filename = "./log/" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
@@ -160,8 +158,8 @@ class SerialUI(object):
                 'cmd': 'open',
                 'filename': filename
             }
-            m.tell('/cmd', msg, actor_ref=self.plugin_manager._component.getPluginByName('FileStoreActor', "Storage").plugin_object.actor_ref)
-            m.tell("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source").plugin_object.actor_ref)
+            m.tell('/cmd', msg, actor_ref=self.plugin_manager.getActorRefByName('FileStoreActor', "Storage"))
+            m.tell("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"))
             self.openclose = "Close"
         else:
             # self._display_queue.append((close(), self._ser.channel))
@@ -169,19 +167,17 @@ class SerialUI(object):
                 'cmd': 'close'
             }
             actors = [
-                self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source").plugin_object.actor_ref,
-                self.plugin_manager._component.getPluginByName('FileStoreActor', "Storage").plugin_object.actor_ref,
+                self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"),
+                self.plugin_manager.getActorRefByName('FileStoreActor', "Storage"),
             ]
             m.tell('/cmd', msg, actor_ref=actors)
             self.openclose = "Open"
     
     def tell(self, message):
-        topic = message.get('topic')
-        if topic == '/display_data':
-            data = message.get('data')
-            self.recvtxt += data
-            if self._enable_scroll and not self._context_menu_open:
-                self.scroll.scroll_to(percent=1.0)
+        data = message.get('data')
+        self.recvtxt += data
+        if self._enable_scroll and not self._context_menu_open:
+            self.scroll.scroll_to(percent=1.0)
     
     def update_config(self):
         """
@@ -192,12 +188,11 @@ class SerialUI(object):
         cf.close()
     
 def myExit():
-    ActorManager.singleton().stop_all()
+    TopicManager.singleton().stop_all()
 
 app.on_shutdown(myExit)
 app.on_disconnect(myExit)
 
-if __name__ in {"__main__", "__mp_main__"}:
-    logging.basicConfig(level=logging.INFO)
-    myUI = SerialUI()
-    ui.run(native=True, reload=False)
+logging.basicConfig(level=logging.INFO)
+myUI = SerialUI()
+ui.run(native=True, reload=False)

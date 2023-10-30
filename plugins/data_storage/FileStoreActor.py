@@ -11,8 +11,6 @@ class FileStoreActor(StorageActor):
         self.f = None
         self._filename = None
         self._ts = time.time()
-        self.topic_manager.subscribe('/cmd', self.actor_ref)
-        self.topic_manager.subscribe('/display_data', self.actor_ref)
     
     def on_StartRecord(self, filename):
         if not filename:
@@ -33,14 +31,13 @@ class FileStoreActor(StorageActor):
             return
         self.f.write(data)
         self.f.flush()
-    
-    def on_receive(self, message):
-        topic = message.get('topic')
-        if topic == '/cmd' and 'cmd' in message:
-            cmd = message.get('cmd')
-            if cmd == 'open':
-                self.on_StartRecord(message.get('filename'))
-            elif cmd == 'close':
-                self.on_StopRecord()
-        elif topic == '/display_data':
-            self.on_DisplayData(message.get('data'))
+
+    def on_cmd(self, msg):
+        cmd = msg.get('cmd')
+        if cmd == 'open':
+            self.on_StartRecord(msg.get('filename'))
+        elif cmd == 'close':
+            self.on_StopRecord()
+
+    def on_input(self, msg):
+        self.on_DisplayData(msg.get('data')) 

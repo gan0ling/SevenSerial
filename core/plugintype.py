@@ -4,7 +4,7 @@ from pykka import ThreadingActor, Actor, ActorRegistry
 import logging
 import sys
 import queue
-from core.manager import ActorManager
+from core.manager import TopicManager
 from datetime import datetime
 import time
 from stransi import Ansi, SetColor, SetAttribute
@@ -17,12 +17,67 @@ class MyThreadActor(ThreadingActor):
     def __init__(self):
         super().__init__()
         self.is_activated = False
-        self.topic_manager = ActorManager.singleton()
+        self.topic_manager = TopicManager.singleton()
+        #默认订阅topic：/cmd, /class_name/input
+        self.topic_manager.subscribe('/cmd', self.actor_ref)
+        self.topic_manager.subscribe(f'/{self.__class__.__name__}/input', self.actor_ref)
+        self.__topics = {
+            'sub': set(['/cmd', f'/{self.__class__.__name__}/input']),
+            'pub': set([f'/{self.__class__.__name__}/output'])
+        }
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def __get_topics(self):
+        return self.__topics
+    
+    def __set_topics(self, topics):
+        #topic 可以重复订阅
+        #先取消原来的订阅
+        self.__topics['pub'].clear()
+
+        if 'sub' in topics:
+            for topic in self.__topics['sub']:
+                self.topic_manager.unsubscribe(topic, self.actor_ref)
+            self.__topics['sub'].clear()
+            for topic in topics['sub']:
+                self.topic_manager.subscribe(topic, self.actor_ref)
+                self.__topics['sub'].add(topic)
+        if 'pub' in topic:
+            self.__topics['pub'].clear()
+            self.__topics['pub'].update(topics['pub'])
+    topics = property(fget=__get_topics, fset=__set_topics)
+
+    def add_sub_topic(self, topic):
+        self.__topics['sub'].add(topic)
+        self.topic_manager.subscribe(topic, self.actor_ref)
+    
+    def add_pub_topic(self, topic):
+        self.__topics['pub'].add(topic)
+
+    def remove_sub_topic(self, topic):
+        self.__topics['sub'].discard(topic)
+        self.topic_manager.unsubscribe(topic, self.actor_ref)
+    
+    def remove_pub_topic(self, topic):
+        self.__topics['pub'].discard(topic)
+
+    def data_input_topic(self):
+        return f'/{self.__class__.__name__}/input'
+    
+    def data_output_topic(self):
+        return f'/{self.__class__.__name__}/output'
+
+    def tell(self, msg):
+        for topic in self.topics['pub']:
+            self.topic_manager.tell(topic, msg)
+
 
     def activate(self):
         """
             Called at plugin activation. start the actor thread
         """
+        if self.is_activated:
+            return
         self.is_activated = True
         assert self.actor_ref is not None, (
             "Actor.__init__() have not been called. "
@@ -36,8 +91,27 @@ class MyThreadActor(ThreadingActor):
         """
             Called when the plugin is disabled.
         """
+        if not self.is_activated:
+            return
         self.is_activated = False
         self.stop()
+    
+    def on_input(self, msg):
+        raise NotImplementedError
+    
+    def on_cmd(self, msg):
+        raise NotImplementedError
+    
+    def on_receive(self, message):
+        self.logger.debug(f'{self.__class__.__name__} on_receive', message)
+        if 'topic' not in message:
+            return
+        topic = message['topic']
+        if topic.endswith('/input'):
+            self.on_input(message)
+        elif topic == '/cmd':
+            self.on_cmd(message)
+
 
 class LoopActor(MyThreadActor):
     def __init__(self, timeout=0.05, block=True):
@@ -136,8 +210,5 @@ class StorageActor(MyThreadActor):
     
     def deactivate(self):
         super().deactivate() 
-
-
-
 
 

@@ -14,12 +14,13 @@ class Ansi2HtmlConverter(ConvertActor):
         self.bold = False
         self.stroke = False
         self.strong = False
-        #TODO: 动态订阅数据Input的topic
-        self.topic_manager.subscribe('/LineSegmentActor/output', self.actor_ref)
     
-    def on_receive(self, message): 
-        if message.get('topic') == '/LineSegmentActor/output':
-            self.on_SegmentData(message.get('data'), message.get('ts'), message.get('mode'))
+    def on_input(self, message): 
+        if 'data' not in message: 
+            return
+        ts = message.get('ts', None)
+        mode = message.get('mode', 'text')
+        self.on_SegmentData(message.get('data'), ts, mode)
 
     def SetColor(self, bg_color, fg_color):
         self.bg_color = bg_color
@@ -34,7 +35,7 @@ class Ansi2HtmlConverter(ConvertActor):
     
     def on_SegmentData(self, data, ts, mode):
         if mode == "hex":
-            self.topic_manager.tell('/display_data', {'data':data, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})
+            self.tell({'data':data, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})
             return
         #html format <p>text<span style="color:fg_color background-color:bg_color">color</span></p>
         #每次处理一行
@@ -74,4 +75,4 @@ class Ansi2HtmlConverter(ConvertActor):
                     else:
                         self.bg_color = self.default_bg_color
         html += "</p>"
-        self.topic_manager.tell('/display_data', {'data':html, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})
+        self.tell({'data':html, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})

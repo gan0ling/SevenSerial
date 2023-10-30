@@ -9,15 +9,13 @@ class SerialSourceActor(SourceActor):
         self.port = None
         self.baudrate = 115200
         self.serial = None
-        self.topic_manager.subscribe('/cmd', self.actor_ref)
-        self.topic_manager.subscribe('/write', self.actor_ref)
 
     def on_poll(self) -> None:
         if self.serial and self.serial.is_open and self.serial.in_waiting:
             data = self.serial.read(self.serial.in_waiting).decode('utf-8', errors='ignore')
             #发布消息，topic为/serial/read data为data ts为当前时间戳
             now = datetime.now().strftime("%m-%d %H:%M:%S.%f")[:-3]
-            self.topic_manager.tell('/SerialSourceActor/output', {'port':self.port,'data': data, 'ts': now})
+            self.tell({'port':self.port,'data': data, 'ts': now})
         else:
            time.sleep(self.timeout)
 
@@ -48,16 +46,16 @@ class SerialSourceActor(SourceActor):
             data = message.get('data')
             self.serial.write(data)
 
-    def on_receive(self, message):
-        if 'topic' in message:
-            topic = message.get('topic')
-            if topic == '/cmd':
-                if 'cmd' not in message:
-                    return
-                cmd = message.get('cmd')
-                if cmd == 'open':
-                    self.on_open(message)
-                elif cmd == 'close':
-                    self.on_close(message)
-            elif topic == '/write':
-                self.on_write(message)
+    def on_cmd(self, msg):
+        if 'cmd' not in msg:
+            return
+        cmd = msg['cmd']
+        if cmd == 'open':
+            self.on_open(msg)
+        elif cmd == 'close':
+            self.on_close(msg)
+        elif cmd == 'write':
+            self.on_write(msg)
+    
+    def on_input(self, msg):
+        self.on_write(msg)
