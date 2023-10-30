@@ -34,28 +34,37 @@ class SerialSourceActor(SourceActor):
         self.port = message.get('port')
         self.baudrate = message.get('baudrate')
         self.timeout = message.get('timeout', self.timeout)
-        self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        try:
+            self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        except Exception as e:
+            self.logger.error("open serial port failed: %s", e)
+            self.serial = None
+            return False
+        return True
 
     def on_close(self, message):
         if self.serial and self.serial.is_open:
             self.serial.close()
         self.serial = None
+        return True
 
     def on_write(self, message):
         if self.serial and self.serial.is_open:
             data = message.get('data')
             self.serial.write(data)
+            return True
+        return False
 
     def on_cmd(self, msg):
         if 'cmd' not in msg:
-            return
+            return None
         cmd = msg['cmd']
         if cmd == 'open':
-            self.on_open(msg)
+            return self.on_open(msg)
         elif cmd == 'close':
-            self.on_close(msg)
+            return self.on_close(msg)
         elif cmd == 'write':
-            self.on_write(msg)
+            return self.on_write(msg)
     
     def on_input(self, msg):
         self.on_write(msg)

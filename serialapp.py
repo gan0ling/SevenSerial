@@ -159,8 +159,11 @@ class SerialUI(object):
                 'filename': filename
             }
             m.tell('/cmd', msg, actor_ref=self.plugin_manager.getActorRefByName('FileStoreActor', "Storage"))
-            m.tell("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"))
-            self.openclose = "Close"
+            ret = m.ask("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"), timeout=1, block=True)
+            if ret[0][1]:
+                self.openclose = "Close"
+            else:
+                ui.notify("Open Serial Port Failed", type="error")
         else:
             # self._display_queue.append((close(), self._ser.channel))
             msg = {

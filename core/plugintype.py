@@ -103,14 +103,15 @@ class MyThreadActor(ThreadingActor):
         raise NotImplementedError
     
     def on_receive(self, message):
-        self.logger.debug(f'{self.__class__.__name__} on_receive', message)
+        self.logger.debug(f'on_receive {message}')
         if 'topic' not in message:
             return
         topic = message['topic']
         if topic.endswith('/input'):
-            self.on_input(message)
+            return self.on_input(message)
         elif topic == '/cmd':
-            self.on_cmd(message)
+            return self.on_cmd(message)
+        return None
 
 
 class LoopActor(MyThreadActor):

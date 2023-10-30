@@ -95,13 +95,28 @@ class TopicManager:
                 for subscriber in self.subscribers[subscribed_topic]:
                     subscriber.tell(message)
     
-    # def ask(self, topic, message, timeout=2, block=True):
-    #     #发送消息，等待返回值
-    #     #如果block为True，则阻塞等待timeout秒，如果block为False，则立即返回, future对象
-    #     if block:
-    #         #发送消息
-    #         for subscriber in self.subscribers[topic]:
-    #             subscriber.ask(topic, message, timeout=timeout)
+    def ask(self, topic, message, timeout=2, block=True, actor_ref=None):
+        #发送消息，等待返回值
+        #如果block为True，则阻塞等待timeout秒，如果block为False，则立即返回, future对象
+        if not message:
+            message = {}
+        if 'topic' not in message:
+            message['topic'] = topic
+        ret = []
+        #发送消息
+        if actor_ref:
+            if isinstance(actor_ref, list):
+                for subscriber in actor_ref:
+                    #如果actor_ref订阅了该消息，则发送
+                    if self.subscribers[topic].__contains__(subscriber):
+                        ret.append((subscriber,subscriber.ask(message, timeout=timeout, block=block)))
+            elif isinstance(actor_ref, ActorRef):
+                if self.subscribers[topic].__contains__(actor_ref):
+                    ret.append((actor_ref, actor_ref.ask(message, timeout=timeout, block=block)))
+            return ret
+        for subscriber in self.subscribers[topic]:
+            ret.append((subscriber,subscriber.ask(message, timeout=timeout, block=block)))
+        return ret
 
 class MyConfigurablePluginManager(ConfigurablePluginManager):
     def getPluginByName(self, name, category='Default'):
