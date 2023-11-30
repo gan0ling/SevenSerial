@@ -193,6 +193,7 @@ class SerialUI(object):
         self.config_parser.write(cf)
         cf.close()
     
+    
 def myExit():
     TopicManager.singleton().stop_all()
 
