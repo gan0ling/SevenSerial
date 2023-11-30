@@ -26,7 +26,7 @@ class JLinkRttSourceActor(SourceActor):
             return
         cmd = msg['cmd']
         if cmd == 'open':
-            self._target = message['target']
+            self._target = msg['target']
             if not self._jlink:
                 self._jlink = pylink.JLink()
             self._jlink.open()

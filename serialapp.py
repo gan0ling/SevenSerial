@@ -77,7 +77,7 @@ class SerialUI(object):
                     ui.select(self.port_list, label="Port", on_change=self.onPortChange).bind_value(self, "port")
                     ui.select(self.baudrates, label="Baudrate").bind_value(self,"baud")
                     ui.button(on_click=self.onOpenClose).bind_text(self, "openclose")
-                    ui.input().bind_value(self, "sendtxt")
+                    ui.input().on('keydown.enter', self.onSend).props('clearable').bind_value(self, "sendtxt")
                     ui.button(text="Send", on_click=self.onSend)
                 ui.separator()
                 # self._log = ui.log().classes("w-full").style("height: 84vh; overflow-y: scroll;")
@@ -126,6 +126,9 @@ class SerialUI(object):
             plugin = self.plugin_manager._component.getPluginByName('JLinkRttSourceActor', "Source")
         else:
             plugin = self.plugin_manager._component.getPluginByName('SerialSourceActor', "Source")
+        #区分文本模式还是16进制模式，文本模式自动追加\r\n
+        if not self.sendtxt.endswith('\r\n'):
+            self.sendtxt += '\r\n'
         m.tell("/write", {'data':self.sendtxt}, actor_ref=plugin.plugin_object.actor_ref)
 
     def onOpenClose(self, e):
@@ -140,7 +143,7 @@ class SerialUI(object):
                     'cmd': 'open',
                     'target': 'EFR32BG22CxxxF512',
                 }
-                m.tell('/cmd', msg, actor_ref=plugin.plugin_object.actor_ref)
+                m.tell('/cmd', msg, actor_ref=plugin.actor_ref)
                 self.openclose = "Close"
             else:
                 logging.debug("close jlink rtt")
@@ -148,7 +151,7 @@ class SerialUI(object):
                 msg = {
                     'cmd': 'close'
                 }
-                m.tell('/cmd', msg, actor_ref=plugin.plugin_object.actor_ref)
+                m.tell('/cmd', msg, actor_ref=plugin.actor_ref)
             return
         self.plugin_manager.activatePluginByName('SerialSourceActor', "Source", save_state=False)
         if self.openclose == "Open":
