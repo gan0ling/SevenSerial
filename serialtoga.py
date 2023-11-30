@@ -11,6 +11,10 @@ import asyncio
 import logging
 import copy
 
+class MyMultiLineDisplay(toga.MultilineTextInput):
+    def set_rtf(self, value):
+        self._impl.native.Rtf = value
+
 class SerialApp(toga.App):
     def freshport(self):
         ports = serial.tools.list_ports.comports()
@@ -35,7 +39,8 @@ class SerialApp(toga.App):
         self.recvtxt = ""
         self.ui_port_list = toga.Selection(items=self.port_list, on_change=self.onPortChange, value=self.port)
         self.ui_baud_list = toga.Selection(items=self.baudrates, value=self.baud, on_change=self.onBaudChange)
-        self.ui_main_dispaly = toga.MultilineTextInput(style=Pack(flex=1))
+        # self.ui_main_dispaly = toga.MultilineTextInput(style=Pack(flex=1))
+        self.ui_main_dispaly = MyMultiLineDisplay(style=Pack(flex=1))
         self.ui_status_bar = toga.Label('status:')
         self.ui_openclose_btn = toga.Button("Open", on_press=self.onOpenClose)
         #setup ui
@@ -94,10 +99,15 @@ class SerialApp(toga.App):
         self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
         #add background task
         self.add_background_task(self.backgound_task)
+        # a = """
+        # {\\rtf1\\ansi{\\colortbl ;\\red255\\green0\\blue0;\\red0\\green77\\blue187;}\\par\\cf1\\f0\\fs20 Hello \\cf2 World\\cf0\\f1\\par}
+        # """
+        a = "{\\rtf1 {\\colortbl\n;\\red255\\green0\\blue0;\\red0\\green77\\blue187;} \\ansi {\\cf1 Hello!} {\\cf2 World!} This is some {\\b bold} text.}"
+        self.ui_main_dispaly.set_rtf(a)
 
     def tell(self, message):
         #deep copy message
-        msg = copy.deepcopy(message)
+        msg = copy.copy(message)
         self.logger.debug("tell: %s", msg)
         self.msg_queue.put(msg)
     
@@ -108,7 +118,10 @@ class SerialApp(toga.App):
                 self.logger.debug("msg: %s", msg)
                 if msg['topic'] == '/Ansi2HtmlConverter/output':
                     self.logger.debug('add to display')
-                    self.ui_main_dispaly.value += msg['data']
+                    self.recvtxt += msg['data']
+                    # self.ui_main_dispaly.value += msg['data']
+                    self.ui_main_dispaly.set_rtf(msg['data'])
+                    self.ui_main_dispaly.scroll_to_bottom()
             await asyncio.sleep(0.02)
 
     def onPortChange(self, widget):
@@ -178,6 +191,6 @@ class SerialApp(toga.App):
         return True
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     app = SerialApp('7Serial', 'org.beeware.7serial')
     app.main_loop()
