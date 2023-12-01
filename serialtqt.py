@@ -1,30 +1,21 @@
-import toga
-from toga.constants import COLUMN, ROW
-from toga.style import Pack
 import serial.tools.list_ports
 from datetime import datetime
 from core.manager import TopicManager, MyConfigurablePluginManager
 from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor, HighlightActor 
 from configparser import ConfigParser
-import queue
-import asyncio
-import logging
-import copy
+import queue, logging, copy
+import sys
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PySide6.QtCore import Slot, QTimer
+from ui.ui_main import Ui_MainWindow
 
-class MyMultiLineDisplay(toga.MultilineTextInput):
-    def set_rtf(self, value):
-        self._impl.native.Rtf = value
 
-class SerialApp(toga.App):
-    def freshport(self):
-        ports = serial.tools.list_ports.comports()
-        self.port_list = [p.device for p in ports]
-
-    def startup(self):
+class SerialApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
         self.logger = logging.getLogger('SerialApp')
-        self.main_window = toga.MainWindow()
-        self.on_exit = self.onExit
-        self.main_window.content = toga.Box(style=Pack(direction=COLUMN))
         self.port_list = None 
         self.baudrates = [
             300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 
@@ -32,39 +23,16 @@ class SerialApp(toga.App):
             256000, 460800, 500000, 512000, 600000, 750000, 921600,
             1000000, 1500000, 2000000, 2500000, 3000000, 3500000
         ]
-        self.freshport()
-        self.port = self.port_list[0] or None
+        self.ui.comboBox_baud.addItems([str(b) for b in self.baudrates])
         self.baud = 115200
+        self.ui.comboBox_baud.setCurrentText(str(self.baud))
+        self.freshport()
+        self.ui.comboBox_port.addItems([p for p in self.port_list])
+        self.port = self.port_list[0] or None
+        if self.port:
+            self.ui.comboBox_port.setCurrentText(self.port)
         self.sendtxt = ""
         self.recvtxt = ""
-        self.ui_port_list = toga.Selection(items=self.port_list, on_change=self.onPortChange, value=self.port)
-        self.ui_baud_list = toga.Selection(items=self.baudrates, value=self.baud, on_change=self.onBaudChange)
-        # self.ui_main_dispaly = toga.MultilineTextInput(style=Pack(flex=1))
-        self.ui_main_dispaly = MyMultiLineDisplay(style=Pack(flex=1))
-        self.ui_status_bar = toga.Label('status:')
-        self.ui_openclose_btn = toga.Button("Open", on_press=self.onOpenClose)
-        #setup ui
-        # self.main_window.content.add(
-        #     toga.Box(
-        #         children=[self.ui_main_dispaly],
-        #         style=Pack(direction=COLUMN, flex=1)
-        #     )
-        # )
-        self.main_window.content.add(self.ui_main_dispaly)
-        self.main_window.content.add(
-            toga.Box(
-                children=[
-                    toga.Label("Port"),
-                    self.ui_port_list,
-                    toga.Label("Baudrate"),
-                    self.ui_baud_list,
-                    self.ui_openclose_btn
-                ],
-                style=Pack(direction=ROW)
-            )
-        )
-        self.main_window.content.add(self.ui_status_bar)
-        self.main_window.show()
         #setup plugin
         self.msg_queue = queue.Queue()
         self.config_parser = ConfigParser()
@@ -97,13 +65,14 @@ class SerialApp(toga.App):
         self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
         self.plugin_manager.activatePluginByName('FileStoreActor', "Storage", save_state=False)
         self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
-        #add background task
-        self.add_background_task(self.backgound_task)
-        # a = """
-        # {\\rtf1\\ansi{\\colortbl ;\\red255\\green0\\blue0;\\red0\\green77\\blue187;}\\par\\cf1\\f0\\fs20 Hello \\cf2 World\\cf0\\f1\\par}
-        # """
-        # a = "{\\rtf1 {\\colortbl\n;\\red255\\green0\\blue0;\\red0\\green77\\blue187;} \\ansi {\\cf1 Hello!} {\\cf2 World!} This is some {\\b bold} text.}"
-        # self.ui_main_dispaly.set_rtf(a)
+        #注册timer
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.backgound_task)
+        self.timer.start(20)
+
+    def freshport(self):
+        ports = serial.tools.list_ports.comports()
+        self.port_list = [p.device for p in ports]
 
     def tell(self, message):
         #deep copy message
@@ -111,45 +80,46 @@ class SerialApp(toga.App):
         self.logger.debug("tell: %s", msg)
         self.msg_queue.put(msg)
     
-    async def backgound_task(self, widget):
-        while True:
-            while self.msg_queue.qsize() > 0:
-                msg = self.msg_queue.get(block=False)
-                self.logger.debug("msg: %s", msg)
-                if msg['topic'] == '/Ansi2HtmlConverter/output':
-                    self.logger.debug('add to display')
-                    self.recvtxt += msg['data']
-                    # self.ui_main_dispaly.value += msg['data']
-                    self.ui_main_dispaly.set_rtf(msg['data'])
-                    self.ui_main_dispaly.scroll_to_bottom()
-            await asyncio.sleep(0.02)
+    def backgound_task(self):
+        while self.msg_queue.qsize() > 0:
+            msg = self.msg_queue.get(block=False)
+            self.logger.debug("msg: %s", msg)
+            if msg['topic'] == '/Ansi2HtmlConverter/output':
+                # self.recvtxt += msg['data']
+                self.ui.textEdit.insertHtml(msg['data'])
+                #scroll to bottom
+                self.ui.textEdit.verticalScrollBar().setValue(self.ui.textEdit.verticalScrollBar().maximum())
 
-    def onPortChange(self, widget):
-        self.port = self.ui_port_list.value
-    def onBaudChange(self, widget):
-        self.baud = self.ui_baud_list.value
+    @Slot(str)
+    def on_comboBox_port_currentTextChanged(self, text):
+        self.port = self.ui.comboBox_port.currentText()
+
+    @Slot(str)
+    def on_comboBox_baud_currentTextChanged(self, text):
+        self.baud = int(self.ui.comboBox_baud.currentText())
     
-    def onOpenClose(self, widget):
+    @Slot()
+    def on_btn_openclose_clicked(self):
         m = TopicManager.singleton()
-        if self.ui_port_list.value == 'JLink':
+        if self.port == 'JLink':
             plugin = self.plugin_manager.activatePluginByName('JLinkRttSourceActor', "Source", save_state=False)
-            if self.ui_openclose_btn.text == "Open":
+            if self.ui.btn_openclose.text() == "Open":
                 msg = {
                     'cmd': 'open',
                     'target': 'EFR32BG22CxxxF512',
                 }
                 m.tell('/cmd', msg, actor_ref=plugin.actor_ref)
-                self.ui_openclose_btn.text = "Close"
+                self.ui.btn_openclose.setText("Close")
             else:
                 self.logger.debug("close jlink rtt")
-                self.ui_openclose_btn.text = "Open"
+                self.ui.btn_openclose.setText("Open")
                 msg = {
                     'cmd': 'close'
                 }
                 m.tell('/cmd', msg, actor_ref=plugin.actor_ref)
             return
         self.plugin_manager.activatePluginByName('SerialSourceActor', "Source", save_state=False)
-        if self.ui_openclose_btn.text == "Open":
+        if self.ui.btn_openclose.text() == "Open":
             #保存文件
             filename = "./log/" + self.port + "_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".html"
             msg = {
@@ -159,10 +129,10 @@ class SerialApp(toga.App):
             m.tell('/cmd', msg, actor_ref=self.plugin_manager.getActorRefByName('FileStoreActor', "Storage"))
             ret = m.ask("/cmd", {'cmd':'open', 'port':self.port, 'baudrate':self.baud, 'timeout':0.05}, actor_ref=self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"), timeout=1, block=True)
             if ret[0][1]:
-                self.ui_openclose_btn.text = "Close"
+                self.ui.btn_openclose.setText("Close")
             else:
                 # ui.notify("Open Serial Port Failed", type="error")
-                self.main_window.error_dialog("Open Serial Port Failed")
+                QMessageBox.critical(self, "Error", "Open Serial Port Failed") 
         else:
             # self._display_queue.append((close(), self._ser.channel))
             msg = {
@@ -173,7 +143,7 @@ class SerialApp(toga.App):
                 self.plugin_manager.getActorRefByName('FileStoreActor', "Storage"),
             ]
             m.tell('/cmd', msg, actor_ref=actors)
-            self.ui_openclose_btn.text = "Open"
+            self.ui.btn_openclose.setText("Open")
 
     def onSend(self, widget):
         print("onSend")
@@ -186,11 +156,13 @@ class SerialApp(toga.App):
         self.config_parser.write(cf)
         cf.close()
     
-    def onExit(self, app):
-        TopicManager.singleton().stop_all()
-        return True
+def onExit():
+    TopicManager.singleton().stop_all()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    app = SerialApp('7Serial', 'org.beeware.7serial')
-    app.main_loop()
+    app = QApplication(sys.argv)
+    app.aboutToQuit.connect(onExit)
+    win = SerialApp()
+    win.show()
+    sys.exit(app.exec())

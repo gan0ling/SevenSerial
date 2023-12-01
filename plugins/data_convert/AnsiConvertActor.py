@@ -74,5 +74,5 @@ class Ansi2HtmlConverter(ConvertActor):
                         self.bg_color = self._cvtColor(t.color)
                     else:
                         self.bg_color = self.default_bg_color
-        html += "</p>"
+        html += "</p><br/>"
         self.tell({'data':html, 'ts':ts, 'bg_color':self.bg_color, 'fg_color':self.fg_color})
