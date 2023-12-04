@@ -4,7 +4,7 @@ from core.manager import TopicManager, MyConfigurablePluginManager
 from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor, HighlightActor 
 from configparser import ConfigParser
 import queue, logging, copy
-import sys
+import sys,os
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PySide6.QtCore import Slot, QTimer
 from ui.ui_main import Ui_MainWindow
@@ -38,6 +38,14 @@ class SerialApp(QMainWindow):
         self.config_parser = ConfigParser()
         self.config_file = 'config.ini'
         self.config_parser.read(self.config_file)
+        if getattr(sys, 'frozen', False):
+            current_dir = sys._MEIPASS
+        else:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+
+        print("current_dir:", current_dir)
+        path = os.path.join(current_dir, "plugins")
+        print("path:", path)
         self.plugin_manager = MyConfigurablePluginManager(
             configparser_instance=self.config_parser,
             categories_filter={
@@ -47,7 +55,7 @@ class SerialApp(QMainWindow):
                 "Highlight": HighlightActor,
                 "Storage": StorageActor,
             },
-            directories_list=["plugins"],
+            directories_list=[path],
             plugin_info_ext="ini",
             config_change_trigger=self.update_config
         )

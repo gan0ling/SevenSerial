@@ -1,16 +1,21 @@
 import os
 import subprocess
 from pathlib import Path
-import nicegui
 
 cmd = [
     'python',
     '-m', 'PyInstaller',
-    'serialapp.py', # your main file with ui.run()
+    'serialqt.pyw', # your main file with ui.run()
     '--name', 'SevenSerial', # name of your app
-    '--onefile',
-    #'--windowed', # prevent console appearing, only use with ui.run(native=True, ...)
-    '--add-data', f'{Path(nicegui.__file__).parent}{os.pathsep}nicegui'
+#    '--onefile',
+    '--windowed', # prevent console appearing, only use with ui.run(native=True, ...)
+    '--add-data', 'core:core',
+    '--add-data', 'plugins:plugins',
+    '--add-data', 'ui:ui',
+    '--collect-submodules', 'pykka',
+    '--collect-submodules', 'yapsy',
+    '--collect-submodules', 'stransi',
+    '--collect-submodules', 'pylink',
 ]
 print(cmd)
 subprocess.call(cmd)
