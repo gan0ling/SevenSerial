@@ -43,9 +43,7 @@ class SerialApp(QMainWindow):
         else:
             current_dir = os.path.dirname(os.path.abspath(__file__))
 
-        print("current_dir:", current_dir)
         path = os.path.join(current_dir, "plugins")
-        print("path:", path)
         self.plugin_manager = MyConfigurablePluginManager(
             configparser_instance=self.config_parser,
             categories_filter={
