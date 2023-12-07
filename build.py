@@ -8,8 +8,8 @@ cmd = [
     '-m', 'PyInstaller',
     'serialtk.py', # your main file with ui.run()
     '--name', 'SevenSerial', # name of your app
-   '--onedir',
-    # '--windowed', # prevent console appearing, only use with ui.run(native=True, ...)
+    '--onedir',
+    '--windowed', # prevent console appearing, only use with ui.run(native=True, ...)
     '--add-data', 'core:core',
     '--add-data', 'plugins:plugins',
     '--add-data', 'ui:ui',

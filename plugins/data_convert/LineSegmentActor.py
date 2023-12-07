@@ -30,7 +30,7 @@ class LineSegmentActor(ConvertActor):
             #文本模式
             for line in data.splitlines(keepends=True):
                 #为每行数据增加时间戳
-                line = "[" + ts + "] " + line
+                line = "\033[32m[" + ts + " \033[0m]" + line
                 self.tell({'data':line, 'ts':ts, 'mode':'text'})
 
         else :

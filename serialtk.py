@@ -76,19 +76,19 @@ class MyAnsiTextBox(customtkinter.CTkTextbox):
                     self.bold = False
                     self.stroke = False
                     self.strong = False
-                    self.fg_color = 'fg_black'
-                    self.bg_color = 'bg_white'
+                    self.fg_color = 'fg_white'
+                    self.bg_color = 'bg_black'
             elif isinstance(t, SetColor):
                 if t.role.name == "FOREGROUND":
                     if t.color:
-                        self.fg_color = self._cvtColor(t.color)
+                        self.fg_color = 'fg_' + self._cvtColor(t.color)
                     else:
-                        self.fg_color = 'fg_black'
+                        self.fg_color = 'fg_white'
                 else:
                     if t.color:
-                        self.bg_color = self._cvtColor(t.color)
+                        self.bg_color = 'bg_' + self._cvtColor(t.color)
                     else:
-                        self.bg_color = 'bg_white'
+                        self.bg_color = 'bg_black'
 
 class MyPortSelectWidget(customtkinter.CTkFrame):
     def __init__(self, master):
@@ -135,6 +135,7 @@ class App(customtkinter.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
         self._exit_loop = False
         self.logger = logging.getLogger("SerialApp")
+        self.send_text = ""
 
         #setup ui
         self.title("SevenSerial")
@@ -147,6 +148,7 @@ class App(customtkinter.CTk):
 
         self.display_widget = MyAnsiTextBox(self)
         self.display_widget.grid(row=1, column=0, padx=10, pady=(10,0), sticky="NSEW", columnspan=3)
+        self.display_widget.bind("<Key>",self.on_input)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -189,6 +191,20 @@ class App(customtkinter.CTk):
         self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
         self.plugin_manager.activatePluginByName('FileStoreActor', "Storage", save_state=False)
         self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
+
+    def on_input(self, event):
+        if event.char == '\r':
+            m = TopicManager.singleton()
+            self.send_text += '\r\n'
+            m.tell('/cmd', {'cmd':'write', 'data':bytes(self.send_text, 'utf-8')}, actor_ref=self.plugin_manager.getActorRefByName('SerialSourceActor', "Source"))
+            self.send_text = ""
+        elif event.char == '\x08':
+            self.send_text = self.send_text[:-1]
+        #判断是否是可打印字符
+        elif event.char.isprintable():
+            self.send_text += event.char
+        else:
+            return
 
     def tell(self, message):
         #deep copy message
