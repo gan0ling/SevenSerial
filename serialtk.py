@@ -64,6 +64,7 @@ class MyAnsiTextBox(customtkinter.CTkTextbox):
                 # if not self.bold and not self.stroke and not self.strong:
                 #     tags.append('normal')
                 self.insert('end', t, tags)
+                self.see('end')
             elif isinstance(t, SetAttribute):
                 if t.attribute.name == "BOLD":
                     self.bold = True
