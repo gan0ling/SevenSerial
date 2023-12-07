@@ -1,4 +1,5 @@
 import customtkinter
+from tkinter import messagebox
 import serial.tools.list_ports
 from datetime import datetime
 from core.manager import TopicManager, MyConfigurablePluginManager
@@ -6,6 +7,87 @@ from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor
 from configparser import ConfigParser
 import queue, logging, copy
 import sys,os
+from stransi import Ansi, SetAttribute, SetColor
+
+class MyAnsiTextBox(customtkinter.CTkTextbox):
+    def __init__(self, master):
+        super().__init__(master)
+        #create tag according to ansi color
+        self._color_names = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
+        self.tag_config('fg_black', foreground='black')
+        self.tag_config('fg_red', foreground='red')
+        self.tag_config('fg_green', foreground='green')
+        self.tag_config('fg_yellow', foreground='yellow')
+        self.tag_config('fg_blue', foreground='blue')
+        self.tag_config('fg_magenta', foreground='magenta')
+        self.tag_config('fg_cyan', foreground='cyan')
+        self.tag_config('fg_white', foreground='white')
+        self.tag_config('bg_black', background='black')
+        self.tag_config('bg_red', background='red')
+        self.tag_config('bg_green', background='green')
+        self.tag_config('bg_yellow', background='yellow')
+        self.tag_config('bg_blue', background='blue')
+        self.tag_config('bg_magenta', background='magenta')
+        self.tag_config('bg_cyan', background='cyan')
+        self.tag_config('bg_white', background='white')
+        self.tag_config('default', foreground='black', background='white')
+        # self.tag_config('bold', font=('Courier', 10, 'bold'))
+        # self.tag_config('stroke', font=('Courier', 10, 'underline'))
+        # self.tag_config('strong', font=('Courier', 10, 'bold'))
+        # self.tag_config('normal', font=('Courier', 10, 'normal'))
+        # self.tag_config('underline', underline=True)
+        # self.bold = False
+        # self.stroke = False
+        # self.strong = False
+        # self.underline = False
+        self.fg_color = 'fg_white'
+        self.bg_color = 'bg_black'
+    
+    def _cvtColor(self, color):
+        return color.web_color.name
+    
+    def append_ansi(self, ansi_data):
+        """
+        将插入的数据按照ansi格式进行显示
+        """
+        for t in Ansi(ansi_data).instructions():
+            if isinstance(t, str):
+                tags = [self.fg_color, self.bg_color]
+                # if self.bold:
+                #     tags.append('bold')
+                # if self.stroke:
+                #     tags.append('stroke')
+                # if self.strong:
+                #     tags.append('strong')
+                # if self.underline:
+                #     tags.append('underline')
+                # if not self.bold and not self.stroke and not self.strong:
+                #     tags.append('normal')
+                self.insert('end', t, tags)
+            elif isinstance(t, SetAttribute):
+                if t.attribute.name == "BOLD":
+                    self.bold = True
+                elif t.attribute.name == "STROKE":
+                    self.stroke = True
+                elif t.attribute.name == "STRONG":
+                    self.strong = True
+                elif t.attribute.name == "NORMAL":
+                    self.bold = False
+                    self.stroke = False
+                    self.strong = False
+                    self.fg_color = 'fg_black'
+                    self.bg_color = 'bg_white'
+            elif isinstance(t, SetColor):
+                if t.role.name == "FOREGROUND":
+                    if t.color:
+                        self.fg_color = self._cvtColor(t.color)
+                    else:
+                        self.fg_color = 'fg_black'
+                else:
+                    if t.color:
+                        self.bg_color = self._cvtColor(t.color)
+                    else:
+                        self.bg_color = 'bg_white'
 
 class MyPortSelectWidget(customtkinter.CTkFrame):
     def __init__(self, master):
@@ -62,7 +144,7 @@ class App(customtkinter.CTk):
         self.hex_mode_btn = customtkinter.CTkCheckBox(self, text="Hex", command=self.on_hex_mode)
         self.hex_mode_btn.grid(row=0, column=2, padx=10, pady=(10,0), sticky="w")
 
-        self.display_widget = customtkinter.CTkTextbox(self)
+        self.display_widget = MyAnsiTextBox(self)
         self.display_widget.grid(row=1, column=0, padx=10, pady=(10,0), sticky="NSEW", columnspan=3)
 
         self.grid_columnconfigure(0, weight=1)
@@ -95,7 +177,7 @@ class App(customtkinter.CTk):
         self.plugin_manager.collectPlugins()
 
         m = TopicManager.singleton()
-        m.subscribe('/Ansi2HtmlConverter/output', self)
+        m.subscribe('/LineSegmentActor/output', self)
         #将各个actor的topic串联起来
         #SerialSource/output -> LineSegment/input, LineSegment/output -> AnsiConvert/input, AnsiConvert/output -> FileStore/input
         m.connect(self.plugin_manager.getActorByName('SerialSourceActor', "Source"), self.plugin_manager.getActorByName('LineSegmentActor', "Convert"))
@@ -106,8 +188,6 @@ class App(customtkinter.CTk):
         self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
         self.plugin_manager.activatePluginByName('FileStoreActor', "Storage", save_state=False)
         self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
-
-        self.display_widget.insert('end', "Hello world\n")
 
     def tell(self, message):
         #deep copy message
@@ -156,10 +236,7 @@ class App(customtkinter.CTk):
             if ret[0][1]:
                 self.open_close_btn.configure(text="Close")
             else:
-                # ui.notify("Open Serial Port Failed", type="error")
-                #.critical(self, "Error", "Open Serial Port Failed") 
-                #TODO
-                pass
+                messagebox.showerror("Error", "Open Serial Port Failed")
         else:
             # self._display_queue.append((close(), self._ser.channel))
             msg = {
@@ -191,9 +268,10 @@ class App(customtkinter.CTk):
             while self.msg_queue.qsize() > 0:
                 msg = self.msg_queue.get(block=False)
                 self.logger.debug("msg: %s", msg)
-                if msg['topic'] == '/Ansi2HtmlConverter/output':
-                    self.display_widget.insert("end", msg)
+                if msg['topic'] == '/LineSegmentActor/output':
+                    self.display_widget.append_ansi(msg['data'])
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     app = App()
     app.mainloop()
