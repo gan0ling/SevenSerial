@@ -6,7 +6,7 @@ from core.manager import TopicManager, MyConfigurablePluginManager
 from core.plugintype import ConvertActor, SourceActor, StorageActor, FilterActor, HighlightActor 
 from configparser import ConfigParser
 import queue, logging, copy
-import sys,os
+import sys,os,time
 from stransi import Ansi, SetAttribute, SetColor
 
 class MyAnsiTextBox(customtkinter.CTkTextbox):
@@ -287,6 +287,7 @@ class App(customtkinter.CTk):
                 self.logger.debug("msg: %s", msg)
                 if msg['topic'] == '/LineSegmentActor/output':
                     self.display_widget.append_ansi(msg['data'])
+            time.sleep(0.01)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
