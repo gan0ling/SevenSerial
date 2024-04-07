@@ -100,7 +100,7 @@ class MyPortSelectWidget(customtkinter.CTkFrame):
 
         self.port_value = customtkinter.StringVar()
         self.port_combo = customtkinter.CTkComboBox(self, values=port_list, variable=self.port_value)
-        self.port_combo.grid(row=0, column=1, padx=10, pady=(10,0), sticky="ew")
+        self.port_combo.grid(row=0, column=1, padx=10, pady=(10,0), sticky="w")
 
         baud_list = [
             '300', '600', '1200', '2400', '4800', '9600', '14400', '19200', 
@@ -113,7 +113,7 @@ class MyPortSelectWidget(customtkinter.CTkFrame):
 
         self.baud_value = customtkinter.StringVar()
         self.baud_combo = customtkinter.CTkComboBox(self, values=baud_list, variable=self.baud_value)
-        self.baud_combo.grid(row=0, column=3, padx=10, pady=(10,0), sticky="ew")
+        self.baud_combo.grid(row=0, column=3, padx=10, pady=(10,0), sticky="w")
 
         self.grid_columnconfigure((1,3), weight=1)
 
@@ -136,28 +136,42 @@ class App(customtkinter.CTk):
         self._exit_loop = False
         self.logger = logging.getLogger("SerialApp")
         self.send_text = ""
-
-        #setup ui
-        self.title("SevenSerial")
-        self.port_sel = MyPortSelectWidget(self)
-        self.port_sel.grid(row=0, column=0, sticky="ew")
-        self.open_close_btn = customtkinter.CTkButton(self, text="Open", command=self.on_open_close)
-        self.open_close_btn.grid(row=0, column=1, padx=10, pady=(10,0), sticky="w")
-        self.hex_mode_btn = customtkinter.CTkCheckBox(self, text="Hex", command=self.on_hex_mode)
-        self.hex_mode_btn.grid(row=0, column=2, padx=10, pady=(10,0), sticky="w")
-
-        self.display_widget = MyAnsiTextBox(self)
-        self.display_widget.grid(row=1, column=0, padx=10, pady=(10,0), sticky="NSEW", columnspan=3)
-        self.display_widget.bind("<Key>",self.on_input)
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        #setup plugin
-        self.msg_queue = queue.Queue()
+        #恢复上次窗口的位置和大小, 如果上次没有记录, 则使用默认值(屏幕高度*0.9，屏幕宽度的一半)
         self.config_parser = ConfigParser()
         self.config_file = 'config.ini'
         self.config_parser.read(self.config_file)
+        if self.config_parser.has_section('window') and self.config_parser.has_option('window', 'geometry'):
+            self.geometry(self.config_parser.get('window', 'geometry'))
+        else:
+            wid = self.winfo_screenwidth()
+            hei = self.winfo_screenheight()
+            self.geometry("%dx%d+%d+%d" % (wid/2, hei*0.9, 0, 0))
+        #绑定窗口大小变化事件
+        self.bind("<Configure>", self.on_resize)
+    
+        #setup ui
+        self.title("SevenSerial")
+        self.port_sel = MyPortSelectWidget(self)
+        self.hex_mode_btn = customtkinter.CTkCheckBox(self, text="Hex", command=self.on_hex_mode)
+        self.open_close_btn = customtkinter.CTkButton(self, text="Open", command=self.on_open_close)
+        self.send_box = customtkinter.CTkEntry(self)
+        self.send_btn = customtkinter.CTkButton(self, text="Send", command=self.on_send)
+
+        self.display_widget = MyAnsiTextBox(self)
+        self.display_widget.bind("<Key>",self.on_input)
+        # 布局
+        self.display_widget.grid(row=0, column=0, padx=10, pady=(10,0), sticky="NSEW", columnspan=5)
+        self.grid_rowconfigure(0, weight=1)
+        self.send_btn.grid(row=1, column=4, padx=10, pady=(10,0), sticky="w")
+        self.send_box.grid(row=1, column=3, padx=10, pady=(10,0), sticky="ew")
+        self.open_close_btn.grid(row=1, column=2, padx=10, pady=(10,0), sticky="e")
+        self.hex_mode_btn.grid(row=1, column=1, padx=10, pady=(10,0), sticky="e")
+        self.port_sel.grid(row=1, column=0, sticky="w")
+
+        # self.grid_columnconfigure(3, weight=1)
+
+        #setup plugin
+        self.msg_queue = queue.Queue()
         if getattr(sys, 'frozen', False):
             current_dir = sys._MEIPASS
         else:
@@ -191,6 +205,10 @@ class App(customtkinter.CTk):
         self.plugin_manager.activatePluginByName('LineSegmentActor', "Convert", save_state=False)
         self.plugin_manager.activatePluginByName('FileStoreActor', "Storage", save_state=False)
         self.plugin_manager.activatePluginByName('Ansi2HtmlConverter', "Convert", save_state=False)
+    
+    def on_resize(self, event):
+        self.config_parser.set('window', 'geometry', self.geometry())
+        self.update_config()
 
     def on_input(self, event):
         if event.char == '\r':
@@ -200,11 +218,13 @@ class App(customtkinter.CTk):
             self.send_text = ""
         elif event.char == '\x08':
             self.send_text = self.send_text[:-1]
-        #判断是否是可打印字符
         elif event.char.isprintable():
             self.send_text += event.char
         else:
             return
+    
+    def on_send(self):
+        pass
 
     def tell(self, message):
         #deep copy message
